@@ -1,0 +1,578 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id String @id @default(cuid())
+
+  phone String  @unique
+  name  String?
+
+  role UserRole @default(USER)
+
+  createdAt DateTime @default(now())
+
+  videos                  Video[]
+  incidents               Incident[]
+  guardianContacts        GuardianContact[]
+  sosAlerts               SOSAlert[]
+  guardianSessions        GuardianSession[]
+  sentGuardianInvitations GuardianInvitation[] @relation("GuardianInvitationSender")
+  safeJourneys            SafeJourney[]
+  notifications           Notification[]
+  confirmations           Confirmation[]
+  emergencySessions       EmergencySession[]
+  sharedLocations         SharedLocation[]
+  emergencyContacts       EmergencyContact[]
+  
+}
+
+model Video {
+  id          String  @id @default(cuid())
+  title       String
+  description String?
+  category    String?
+  channel     String?
+
+  videoUrl String
+  publicId String
+
+  createdAt DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+}
+
+model Incident {
+  id String @id @default(cuid())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  title       String
+  description String?
+
+  type IncidentType
+
+  latitude  Float
+  longitude Float
+
+  area            String?
+  localGovernment String?
+
+  confidenceScore Int @default(0)
+
+  status      IncidentStatus @default(PENDING)
+  isAnonymous Boolean        @default(false)
+
+  createdAt DateTime @default(now())
+
+  evidence      Evidence[]
+  confirmations Confirmation[]
+  updates       IncidentUpdate[]
+}
+
+model Evidence {
+  id String @id @default(cuid())
+
+  type EvidenceType
+
+  fileUrl String
+
+  incidentId String?
+  incident   Incident? @relation(fields: [incidentId], references: [id])
+
+  emergencyId String?
+  emergency   EmergencySession? @relation(fields: [emergencyId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([incidentId])
+  @@index([emergencyId])
+}
+
+model Confirmation {
+  id String @id @default(cuid())
+
+  incidentId String
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  vote ConfirmationVote @default(CONFIRM)
+
+  comment String?
+
+  createdAt DateTime @default(now())
+
+  @@index([incidentId])
+  @@index([userId])
+}
+
+enum ConfirmationVote {
+  CONFIRM
+  FALSE_REPORT
+}
+
+model IncidentUpdate {
+  id         String @id @default(cuid())
+  incidentId String
+
+  message   String
+  createdAt DateTime @default(now())
+
+  incident Incident @relation(fields: [incidentId], references: [id])
+}
+
+model GuardianContact {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  phone     String
+  email     String?
+  relation  String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SOSAlert {
+  id String @id @default(cuid())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  latitude  Float?
+  longitude Float?
+
+  videoUrl String?
+  message  String?
+
+  status SOSStatus @default(ACTIVE)
+
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  timeline  GuardianTimelineEvent[]
+}
+
+model EmergencyContact {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name         String
+  phone        String
+  relationship String?
+  email        String?
+
+  createdAt    DateTime @default(now())
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  phone     String
+  code      String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+}
+
+enum UserRole {
+  USER
+  COMMUNITY_LEADER
+  POLICE
+  ADMIN
+}
+
+enum IncidentType {
+  ROBBERY
+  KIDNAPPING
+  ACCIDENT
+  FLOOD
+  FIRE
+  MISSING_PERSON
+  SUSPICIOUS_ACTIVITY
+  ROAD_BLOCK
+  OTHER
+}
+
+enum IncidentStatus {
+  PENDING
+  VERIFIED
+  CRITICAL
+  RESPONDING
+  RESOLVED
+  FALSE
+}
+
+enum EvidenceType {
+  PHOTO
+  VIDEO
+  AUDIO
+}
+
+enum SOSStatus {
+  ACTIVE
+  CANCELLED
+  RESOLVED
+}
+
+model GuardianTimelineEvent {
+  id        String   @id @default(cuid())
+  alertId   String
+  message   String
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime @default(now())
+
+  alert SOSAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@index([alertId])
+}
+
+model GuardianSession {
+  id String @id @default(cuid())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  status GuardianSessionStatus @default(ACTIVE)
+
+  startedAt DateTime  @default(now())
+  stoppedAt DateTime?
+
+  latitude  Float?
+  longitude Float?
+
+  batteryLevel  Int?
+  networkStatus String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  locations        GuardianLocation[]
+  timeline         GuardianSessionTimeline[]
+  evidence         EmergencyEvidence[]
+  acknowledgements GuardianAcknowledgement[]
+  responders       EmergencyResponder[]
+}
+
+model GuardianLocation {
+  id String @id @default(cuid())
+
+  sessionId String
+  session   GuardianSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+model GuardianSessionTimeline {
+  id String @id @default(cuid())
+
+  sessionId String
+  session   GuardianSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  message String
+
+  latitude  Float?
+  longitude Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+enum GuardianSessionStatus {
+  ACTIVE
+  STOPPED
+  RESOLVED
+}
+
+model EmergencyEvidence {
+  id String @id @default(cuid())
+
+  sessionId String?
+  session   GuardianSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  type EvidenceCaptureType
+
+  fileUrl  String?
+  publicId String?
+  fileName String?
+  mimeType String?
+
+  latitude  Float?
+  longitude Float?
+  accuracy  Float?
+
+  batteryLevel  Int?
+  networkStatus String?
+
+  mode   String?
+  status EvidenceStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sessionId])
+}
+
+enum EvidenceCaptureType {
+  PHOTO
+  VIDEO
+  AUDIO
+  LOCATION
+  NOTE
+}
+
+enum EvidenceStatus {
+  PENDING
+  UPLOADING
+  UPLOADED
+  FAILED
+}
+
+model GuardianInvitation {
+  id String @id @default(cuid())
+
+  senderId String
+  sender   User   @relation("GuardianInvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  receiverPhone String
+  receiverName  String?
+  relation      String?
+
+  status GuardianInvitationStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([senderId])
+  @@index([receiverPhone])
+}
+
+model GuardianAcknowledgement {
+  id String @id @default(cuid())
+
+  sessionId String
+  session   GuardianSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  guardianName  String
+  guardianPhone String?
+
+  acknowledged   Boolean   @default(false)
+  acknowledgedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+enum GuardianInvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model EmergencyResponder {
+  id String @id @default(cuid())
+
+  sessionId String
+  session   GuardianSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  guardianContactId String?
+
+  guardianName  String
+  guardianPhone String?
+
+  status EmergencyResponderStatus @default(NOTIFIED)
+
+  viewedAt     DateTime?
+  respondingAt DateTime?
+  arrivedAt    DateTime?
+  completedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sessionId])
+  @@index([guardianContactId])
+}
+
+model SharedLocation {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+
+  batteryLevel Int?
+  status       String @default("ONLINE")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId])
+}
+
+enum EmergencyResponderStatus {
+  NOTIFIED
+  VIEWED
+  RESPONDING
+  ARRIVED
+  COMPLETED
+}
+
+model SafeJourney {
+  id String @id @default(cuid())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  destination      String
+  startAddress     String?
+  estimatedArrival DateTime?
+
+  latitude  Float?
+  longitude Float?
+
+  status SafeJourneyStatus @default(ACTIVE)
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  timeline SafeJourneyTimeline[]
+}
+
+model SafeJourneyTimeline {
+  id String @id @default(cuid())
+
+  journeyId String
+  journey   SafeJourney @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  message String
+
+  latitude  Float?
+  longitude Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([journeyId])
+}
+
+enum SafeJourneyStatus {
+  ACTIVE
+  CHECKED_IN
+  OVERDUE
+  CANCELLED
+  COMPLETED
+}
+
+model Notification {
+  id String @id @default(cuid())
+
+  userId String?
+
+  title   String
+  message String
+
+  channel NotificationChannel
+
+  isRead Boolean @default(false)
+
+  incidentId  String?
+  journeyId   String?
+  emergencyId String?
+
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+enum NotificationChannel {
+  GUARDIAN
+  COMMUNITY
+  POLICE
+  EMERGENCY
+}
+
+model EmergencySession {
+  id String @id @default(cuid())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  status EmergencyStatus @default(ACTIVE)
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  latitude  Float?
+  longitude Float?
+
+  battery Int?
+
+  network String?
+
+  guardianMode Boolean @default(false)
+
+  silentSOS Boolean @default(false)
+
+  safeJourney Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  evidence Evidence[]
+
+  timeline EmergencyTimeline[]
+}
+
+model EmergencyTimeline {
+  id String @id @default(cuid())
+
+  emergencyId String
+  emergency   EmergencySession @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
+
+  title String
+
+  description String?
+
+  latitude  Float?
+  longitude Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([emergencyId])
+}
+
+enum EmergencyStatus {
+  ACTIVE
+  MONITORING
+  RESPONDING
+  SAFE
+  CLOSED
+}

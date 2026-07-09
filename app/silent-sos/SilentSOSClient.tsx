@@ -1,0 +1,347 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import ResponderStatus from "./components/ResponderStatus";
+
+import { EmergencyEngine } from "@/lib/emergency/EmergencyEngine";
+import type {
+  EmergencyLocation,
+  EmergencyStatus,
+  EmergencyTimelineItem,
+} from "@/lib/emergency/EmergencyTypes";
+import { EvidenceEngine } from "@/lib/evidence/EvidenceEngine";
+
+export default function SilentSOSClient() {
+  const [active, setActive] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [status, setStatus] = useState<EmergencyStatus>("READY");
+  const [battery, setBattery] = useState<number | null>(null);
+  const [location, setLocation] = useState<EmergencyLocation | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [timeline, setTimeline] = useState<EmergencyTimelineItem[]>([]);
+  const [holdProgress, setHoldProgress] = useState(0);
+
+  const [responders, setResponders] = useState<
+    {
+      id: string;
+      guardianName: string;
+      status: string;
+    }[]
+  >([]);
+
+  const engineRef = useRef<EmergencyEngine | null>(null);
+  const evidenceRef = useRef<EvidenceEngine | null>(null);
+  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const activatedRef = useRef(false);
+
+  useEffect(() => {
+    setTimeline([
+      {
+        time: new Date().toLocaleTimeString(),
+        message: "Silent SOS ready.",
+      },
+    ]);
+
+    evidenceRef.current = new EvidenceEngine();
+
+    engineRef.current = new EmergencyEngine({
+      mode: "SOS",
+      onTimeline: (item) => setTimeline((old) => [item, ...old]),
+      onLocation: (loc) => setLocation(loc),
+      onBattery: (level) => setBattery(level),
+      onSession: async (id) => {
+        setSessionId(id);
+
+        if (id) {
+          try {
+            await evidenceRef.current?.createEvidence({
+              sessionId: id,
+              mode: "SOS",
+              type: "LOCATION",
+              latitude: location?.latitude ?? null,
+              longitude: location?.longitude ?? null,
+              accuracy: location?.accuracy ?? null,
+              batteryLevel: battery,
+              networkStatus: navigator.onLine ? "ONLINE" : "OFFLINE",
+            });
+
+            setTimeline((old) => [
+              {
+                time: new Date().toLocaleTimeString(),
+                message: "Initial SOS location evidence saved.",
+              },
+              ...old,
+            ]);
+          } catch {
+            setTimeline((old) => [
+              {
+                time: new Date().toLocaleTimeString(),
+                message: "Evidence queued for later upload.",
+              },
+              ...old,
+            ]);
+          }
+        }
+      },
+      onStatus: (newStatus) => {
+        setStatus(newStatus);
+        setActive(newStatus === "ACTIVE");
+      },
+    });
+
+    return () => {
+      engineRef.current?.stop();
+    };
+  }, [battery, location]);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout | undefined;
+
+    if (active) {
+      timer = setInterval(() => {
+        setSeconds((s) => s + 1);
+      }, 1000);
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [active]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const fetchResponders = async () => {
+      try {
+        const res = await fetch(
+          `/api/guardian/responders?sessionId=${sessionId}`
+        );
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+
+        setResponders(data.responders);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    fetchResponders();
+
+    const interval = setInterval(fetchResponders, 5000);
+
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
+  function formatTime(sec: number) {
+    const mins = Math.floor(sec / 60);
+    const secs = sec % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+
+  function clearHoldTimer() {
+    if (holdTimerRef.current) {
+      clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  }
+
+  function startHold() {
+    if (active || holdTimerRef.current) return;
+
+    activatedRef.current = false;
+    setHoldProgress(0);
+
+    holdTimerRef.current = setInterval(() => {
+      setHoldProgress((prev) => {
+        const next = prev + 4;
+
+        if (next >= 100 && !activatedRef.current) {
+          activatedRef.current = true;
+          clearHoldTimer();
+
+          setTimeout(async () => {
+            setSeconds(0);
+            await engineRef.current?.start();
+          }, 0);
+
+          return 100;
+        }
+
+        return next;
+      });
+    }, 100);
+  }
+
+  function cancelHold() {
+    clearHoldTimer();
+
+    if (!active && !activatedRef.current) {
+      setHoldProgress(0);
+    }
+  }
+
+  async function stopSOS() {
+    await engineRef.current?.stop();
+    setSeconds(0);
+    setHoldProgress(0);
+  }
+
+  return (
+  <>
+    <section className="rounded-[2rem] border border-red-500/30 bg-red-500/10 p-6 text-center shadow-2xl">
+      <div
+        className={`mx-auto flex h-56 w-56 items-center justify-center rounded-full border ${
+          active
+            ? "animate-pulse border-red-500 bg-red-500/30"
+            : "border-red-500 bg-red-500/10"
+        }`}
+      >
+        <div>
+          <p className="text-6xl">🚨</p>
+
+          <p className="mt-4 text-2xl font-black">
+            {active ? "LIVE" : "READY"}
+          </p>
+
+          <p className="mt-2 text-white/60">
+            {active ? formatTime(seconds) : "Hold below"}
+          </p>
+        </div>
+      </div>
+
+      {!active ? (
+        <div className="mt-8">
+          <button
+            type="button"
+            onMouseDown={startHold}
+            onMouseUp={cancelHold}
+            onMouseLeave={cancelHold}
+            onTouchStart={startHold}
+            onTouchEnd={cancelHold}
+            className="w-full rounded-full bg-red-600 py-4 text-lg font-black text-white"
+          >
+            Hold to Activate SOS
+          </button>
+
+          <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-red-500 transition-all"
+              style={{ width: `${holdProgress}%` }}
+            />
+          </div>
+
+          <p className="mt-3 text-xs text-white/50">
+            Release before completion to cancel.
+          </p>
+        </div>
+      ) : (
+        <button
+          onClick={stopSOS}
+          className="mt-8 w-full rounded-full bg-white py-4 text-lg font-black text-black"
+        >
+          Stop SOS
+        </button>
+      )}
+    </section>
+
+    <section className="mt-6 rounded-[2rem] border border-red-500/20 bg-[#111] p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-black tracking-[0.25em] text-red-300">
+            EMERGENCY ENGINE
+          </p>
+
+          <h2 className="mt-2 text-3xl font-black">
+            SOS Command
+          </h2>
+        </div>
+
+        <span className="rounded-full bg-red-500/20 px-4 py-2 text-xs font-black text-red-300">
+          {status}
+        </span>
+      </div>
+
+      <div className="mt-5 rounded-3xl border border-white/10 bg-black/30 p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-white/60">Mode</span>
+          <strong>SOS</strong>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between">
+          <span className="text-white/60">Session</span>
+          <strong>{sessionId ? "Saved ✅" : "Not Started"}</strong>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-3xl border border-white/10 bg-black/30 p-4">
+          <p className="text-2xl">📍</p>
+
+          <p className="mt-3 text-sm text-white/50">
+            GPS
+          </p>
+
+          <p className="mt-1 font-black">
+            {location ? "Connected" : "Waiting"}
+          </p>
+        </div>
+
+        <div className="rounded-3xl border border-white/10 bg-black/30 p-4">
+          <p className="text-2xl">🔋</p>
+
+          <p className="mt-3 text-sm text-white/50">
+            Battery
+          </p>
+
+          <p className="mt-1 font-black">
+            {battery !== null ? `${battery}%` : "--"}
+          </p>
+        </div>
+      </div>
+
+      {location && (
+        <div className="mt-4 rounded-3xl border border-white/10 bg-black/30 p-4 text-sm text-white/60">
+          <p>Latitude: {location.latitude.toFixed(6)}</p>
+
+          <p className="mt-1">
+            Longitude: {location.longitude.toFixed(6)}
+          </p>
+
+          <p className="mt-1">
+            Accuracy:{" "}
+            {location.accuracy ? `${Math.round(location.accuracy)}m` : "--"}
+          </p>
+        </div>
+      )}
+    </section>
+
+    <ResponderStatus responders={responders} />
+
+    <section className="mt-6 rounded-[2rem] border border-white/10 bg-[#111] p-5">
+      <h2 className="text-xl font-black">
+        SOS Timeline
+      </h2>
+
+      <div className="mt-4 space-y-4">
+        {timeline.map((item, index) => (
+          <div
+            key={index}
+            className="border-l border-red-500/50 pl-4"
+          >
+            <p className="text-xs font-bold text-red-300">
+              {item.time}
+            </p>
+
+            <p className="mt-1 text-sm text-white/70">
+              {item.message}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  </>
+);
+}
