@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { GuardianContact } from "@/app/generated/prisma";
+import type { GuardianContact } from "@/app/generated/prisma/client";
 
 export default function GuardianSummary({
   guardians,

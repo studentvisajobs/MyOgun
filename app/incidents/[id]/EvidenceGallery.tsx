@@ -1,4 +1,4 @@
-import type { Evidence } from "@/app/generated/prisma";
+﻿import type { Evidence } from "@/app/generated/prisma/client";
 import EvidenceCard from "./EvidenceCard";
 
 export default function EvidenceGallery({ evidence }: { evidence: Evidence[] }) {

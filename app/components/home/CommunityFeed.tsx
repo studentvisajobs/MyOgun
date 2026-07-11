@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Incident } from "@/app/generated/prisma";
+import type { Incident } from "@/app/generated/prisma/client";
 
 function timeAgo(date: Date) {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);

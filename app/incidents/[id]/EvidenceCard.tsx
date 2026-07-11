@@ -1,4 +1,4 @@
-import type { Evidence } from "@/app/generated/prisma";
+import type { Evidence } from "@/app/generated/prisma/client";
 
 export default function EvidenceCard({ evidence }: { evidence: Evidence }) {
   const isPhoto = evidence.type === "PHOTO";

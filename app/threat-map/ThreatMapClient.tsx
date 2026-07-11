@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { Incident, Evidence, Confirmation } from "@/app/generated/prisma";
+import type { Incident, Evidence, Confirmation } from "@/app/generated/prisma/client";
 
 type IncidentWithData = Incident & {
   evidence: Evidence[];

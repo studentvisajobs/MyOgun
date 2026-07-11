@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { NotificationPayload } from "./NotificationTypes";
-import { NotificationChannel } from "@/app/generated/prisma";
+import { NotificationChannel } from "@/app/generated/prisma/client";
 
 
 export class NotificationEngine {

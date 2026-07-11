@@ -1,6 +1,6 @@
 import Card from "../../components/ui/Card";
 import Timeline from "../../components/ui/Timeline";
-import type { Evidence, Confirmation, IncidentUpdate } from "@/app/generated/prisma";
+import type { Evidence, Confirmation, IncidentUpdate } from "@/app/generated/prisma/client";
 
 type Props = {
   createdAt: Date;
