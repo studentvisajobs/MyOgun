@@ -1,251 +1,207 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
-export default function GuardianModeClient() {
-  const [active, setActive] = useState(false);
-  const [seconds, setSeconds] = useState(0);
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+export default function AddGuardianForm() {
+  const router = useRouter();
+
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [relation, setRelation] = useState("");
+  const [isPrimary, setIsPrimary] = useState(false);
+
   const [message, setMessage] = useState("");
-  const [alertId, setAlertId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const watchRef = useRef<number | null>(null);
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
-  useEffect(() => {
-    if (active) {
-      timerRef.current = setInterval(() => {
-        setSeconds((prev) => prev + 1);
-      }, 1000);
-    }
+    const cleanName = name.trim();
+    const cleanPhone = phone.trim();
+    const cleanEmail = email.trim();
+    const cleanRelation = relation.trim();
 
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [active]);
-
-  function formatTime(totalSeconds: number) {
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-
-    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-  }
-
-  async function startGuardianMode() {
-    setMessage("Requesting location permission...");
-
-    if (!navigator.geolocation) {
-      setMessage("GPS is not supported on this device.");
+    if (!cleanName || !cleanPhone) {
+      setMessage("Name and phone number are required.");
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
+    try {
+      setSubmitting(true);
+      setMessage("");
 
-        setLocation({ latitude, longitude });
-
-        const res = await fetch("/api/guardian-mode", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            latitude,
-            longitude,
-            message: "Guardian Mode activated",
-          }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          setMessage(data.error || "Failed to activate Guardian Mode.");
-          return;
-        }
-
-        setAlertId(data.alert.id);
-        setActive(true);
-        setSeconds(0);
-        setMessage("Guardian Mode is active. Your location is being monitored.");
-
-        watchRef.current = navigator.geolocation.watchPosition(
-          async (pos) => {
-            const lat = pos.coords.latitude;
-            const lng = pos.coords.longitude;
-
-            setLocation({
-              latitude: lat,
-              longitude: lng,
-            });
-
-            await fetch("/api/guardian-mode", {
-              method: "PATCH",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                alertId: data.alert.id,
-                latitude: lat,
-                longitude: lng,
-              }),
-            });
-          },
-          () => {
-            setMessage("Guardian Mode active, but GPS update failed.");
-          },
-          {
-            enableHighAccuracy: true,
-            maximumAge: 5000,
-            timeout: 10000,
-          }
-        );
-      },
-      () => {
-        setMessage("Location permission was denied.");
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-      }
-    );
-  }
-
-  async function stopGuardianMode() {
-    if (watchRef.current !== null) {
-      navigator.geolocation.clearWatch(watchRef.current);
-    }
-
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-
-    if (alertId) {
-      await fetch("/api/guardian-mode", {
-        method: "DELETE",
+      const response = await fetch("/api/guardian-circle", {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          alertId,
+          name: cleanName,
+          phone: cleanPhone,
+          email: cleanEmail || null,
+          relation: cleanRelation || null,
+          isPrimary,
         }),
       });
-    }
 
-    setActive(false);
-    setAlertId(null);
-    setMessage("Guardian Mode stopped safely.");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to add guardian.");
+      }
+
+      setMessage("Guardian added successfully.");
+
+      router.push("/guardian-circle");
+      router.refresh();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while adding the guardian."
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <main className="min-h-screen bg-[#050505] px-6 py-10 text-white">
-      <div className="mx-auto max-w-5xl">
-        <Link href="/" className="text-sm font-bold text-emerald-400">
-          ← Back to Home
-        </Link>
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-[2rem] border border-emerald-500/20 bg-[#101010] p-6"
+    >
+      <div>
+        <label
+          htmlFor="guardian-name"
+          className="text-sm font-bold text-white/80"
+        >
+          Full name
+        </label>
 
-        <section className="mt-10 rounded-[2rem] border border-emerald-500/20 bg-white/5 p-8 text-center shadow-2xl">
-          <p className="text-sm font-bold uppercase tracking-[0.35em] text-emerald-400">
-            MyOgun
-          </p>
-
-          <h1 className="mt-4 text-4xl font-black md:text-6xl">
-            Guardian Mode
-          </h1>
-
-          <p className="mx-auto mt-4 max-w-2xl text-white/70">
-            Activate personal protection. MyOgun will track your live location
-            and prepare your Guardian Circle for emergency response.
-          </p>
-
-          <div
-            className={`mx-auto mt-10 flex h-56 w-56 items-center justify-center rounded-full border text-center ${
-              active
-                ? "animate-pulse border-red-500 bg-red-500/20"
-                : "border-emerald-500 bg-emerald-500/10"
-            }`}
-          >
-            <div>
-              <p className="text-5xl font-black">
-                {active ? "🛡️" : "🟢"}
-              </p>
-              <p className="mt-3 text-xl font-black">
-                {active ? "ACTIVE" : "READY"}
-              </p>
-              <p className="mt-2 text-sm text-white/60">
-                {active ? formatTime(seconds) : "Tap to start"}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-10">
-            {!active ? (
-              <button
-                onClick={startGuardianMode}
-                className="rounded-full bg-emerald-500 px-10 py-4 text-lg font-black text-black transition hover:bg-emerald-400"
-              >
-                Activate Guardian Mode
-              </button>
-            ) : (
-              <button
-                onClick={stopGuardianMode}
-                className="rounded-full bg-red-600 px-10 py-4 text-lg font-black text-white transition hover:bg-red-500"
-              >
-                Stop Guardian Mode
-              </button>
-            )}
-          </div>
-
-          {message && (
-            <p className="mx-auto mt-6 max-w-xl rounded-2xl border border-white/10 bg-black/40 px-5 py-4 text-sm text-white/70">
-              {message}
-            </p>
-          )}
-
-          {location && (
-            <div className="mx-auto mt-6 max-w-xl rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5 text-left">
-              <p className="font-bold text-emerald-300">Live GPS</p>
-              <p className="mt-2 text-sm text-white/70">
-                Latitude: {location.latitude}
-              </p>
-              <p className="text-sm text-white/70">
-                Longitude: {location.longitude}
-              </p>
-            </div>
-          )}
-        </section>
-
-        <section className="mt-8 grid gap-4 md:grid-cols-3">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-            <p className="text-2xl">📍</p>
-            <h3 className="mt-3 font-black">Live Tracking</h3>
-            <p className="mt-2 text-sm text-white/60">
-              Location updates while Guardian Mode is active.
-            </p>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-            <p className="text-2xl">👥</p>
-            <h3 className="mt-3 font-black">Guardian Circle</h3>
-            <p className="mt-2 text-sm text-white/60">
-              Your trusted contacts will power emergency response.
-            </p>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-            <p className="text-2xl">🎥</p>
-            <h3 className="mt-3 font-black">Evidence Ready</h3>
-            <p className="mt-2 text-sm text-white/60">
-              Emergency recording will be added into this flow next.
-            </p>
-          </div>
-        </section>
+        <input
+          id="guardian-name"
+          type="text"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Guardian's full name"
+          autoComplete="name"
+          required
+          className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-emerald-500"
+        />
       </div>
-    </main>
+
+      <div className="mt-5">
+        <label
+          htmlFor="guardian-phone"
+          className="text-sm font-bold text-white/80"
+        >
+          Phone number
+        </label>
+
+        <input
+          id="guardian-phone"
+          type="tel"
+          value={phone}
+          onChange={(event) => setPhone(event.target.value)}
+          placeholder="+44 7000 000000"
+          autoComplete="tel"
+          required
+          className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-emerald-500"
+        />
+      </div>
+
+      <div className="mt-5">
+        <label
+          htmlFor="guardian-email"
+          className="text-sm font-bold text-white/80"
+        >
+          Email address
+          <span className="ml-2 font-normal text-white/40">Optional</span>
+        </label>
+
+        <input
+          id="guardian-email"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="guardian@example.com"
+          autoComplete="email"
+          className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-emerald-500"
+        />
+      </div>
+
+      <div className="mt-5">
+        <label
+          htmlFor="guardian-relation"
+          className="text-sm font-bold text-white/80"
+        >
+          Relationship
+          <span className="ml-2 font-normal text-white/40">Optional</span>
+        </label>
+
+        <select
+          id="guardian-relation"
+          value={relation}
+          onChange={(event) => setRelation(event.target.value)}
+          className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-white outline-none transition focus:border-emerald-500"
+        >
+          <option value="">Select relationship</option>
+          <option value="Spouse">Spouse</option>
+          <option value="Partner">Partner</option>
+          <option value="Parent">Parent</option>
+          <option value="Child">Child</option>
+          <option value="Sibling">Sibling</option>
+          <option value="Friend">Friend</option>
+          <option value="Colleague">Colleague</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <label className="mt-6 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-black/40 p-4">
+        <input
+          type="checkbox"
+          checked={isPrimary}
+          onChange={(event) => setIsPrimary(event.target.checked)}
+          className="h-5 w-5 accent-emerald-500"
+        />
+
+        <div>
+          <p className="font-bold">Primary guardian</p>
+          <p className="mt-1 text-sm text-white/50">
+            Contact this person first during an emergency.
+          </p>
+        </div>
+      </label>
+
+      {message && (
+        <div
+          className={`mt-5 rounded-2xl border px-4 py-3 text-sm ${
+            message.includes("successfully")
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+              : "border-red-500/30 bg-red-500/10 text-red-300"
+          }`}
+        >
+          {message}
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={submitting}
+        className="mt-6 w-full rounded-full bg-emerald-500 px-6 py-4 text-base font-black text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {submitting ? "Adding Guardian..." : "Add Guardian"}
+      </button>
+
+      <button
+        type="button"
+        onClick={() => router.push("/guardian-circle")}
+        className="mt-3 w-full rounded-full border border-white/10 px-6 py-4 font-bold text-white/65 transition hover:bg-white/5"
+      >
+        Cancel
+      </button>
+    </form>
   );
 }
