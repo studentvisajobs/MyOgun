@@ -17,19 +17,19 @@ model User {
 
   createdAt DateTime @default(now())
 
-  videos                  Video[]
-  incidents               Incident[]
-  guardianContacts        GuardianContact[]
-  sosAlerts               SOSAlert[]
-  guardianSessions        GuardianSession[]
-  sentGuardianInvitations GuardianInvitation[] @relation("GuardianInvitationSender")
-  safeJourneys            SafeJourney[]
-  notifications           Notification[]
-  confirmations           Confirmation[]
-  emergencySessions       EmergencySession[]
-  sharedLocations         SharedLocation[]
-  emergencyContacts       EmergencyContact[]
-  
+  videos                      Video[]
+  incidents                   Incident[]
+  guardianContacts            GuardianContact[]
+  sosAlerts                   SOSAlert[]
+  guardianSessions            GuardianSession[]
+  sentGuardianInvitations     GuardianInvitation[] @relation("GuardianInvitationSender")
+  receivedGuardianInvitations GuardianInvitation[] @relation("GuardianInvitationReceiver")
+  safeJourneys                SafeJourney[]
+  notifications               Notification[]
+  confirmations               Confirmation[]
+  emergencySessions           EmergencySession[]
+  sharedLocations             SharedLocation[]
+  emergencyContacts           EmergencyContact[]
 }
 
 model Video {
@@ -163,16 +163,16 @@ model SOSAlert {
 }
 
 model EmergencyContact {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   name         String
   phone        String
   relationship String?
   email        String?
 
-  createdAt    DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 model OtpCode {
@@ -353,6 +353,9 @@ model GuardianInvitation {
   senderId String
   sender   User   @relation("GuardianInvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
 
+  receiverId String?
+  receiver   User?   @relation("GuardianInvitationReceiver", fields: [receiverId], references: [id], onDelete: SetNull)
+
   receiverPhone String
   receiverName  String?
   relation      String?
@@ -363,7 +366,9 @@ model GuardianInvitation {
   updatedAt DateTime @updatedAt
 
   @@index([senderId])
+  @@index([receiverId])
   @@index([receiverPhone])
+  @@index([status])
 }
 
 model GuardianAcknowledgement {
