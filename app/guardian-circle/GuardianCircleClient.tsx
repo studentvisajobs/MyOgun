@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useCallback, useEffect, useRef, useState } from "react";
+import GuardianStatusCard, {
+  type GuardianNetworkItem,
+} from "@/app/components/guardian/GuardianStatusCard";
 
 type Guardian = {
   id: string;
@@ -25,59 +28,26 @@ type SharedLocation = {
   updatedAt: string;
 } | null;
 
-type NetworkGuardian = {
-  contactId: string;
-  userId: string | null;
-  name: string;
-  phone: string;
-  email: string | null;
-  relation: string | null;
-  isPrimary: boolean;
-
-  registered: boolean;
-  online: boolean;
-
-  latitude: number | null;
-  longitude: number | null;
-  accuracy: number | null;
-
-  batteryLevel: number | null;
-  networkStatus: string;
-  lastSeen: string | null;
-
-  guardianMode: {
-    active: boolean;
-    status: string | null;
-    startedAt: string | null;
-  };
-
-  safeJourney: {
-    active: boolean;
-    status: string | null;
-    destination: string | null;
-    estimatedArrival: string | null;
-    startedAt: string | null;
-  };
-
-  emergency: {
-    active: boolean;
-    status: string | null;
-    silentSOS: boolean;
-    guardianMode: boolean;
-    safeJourney: boolean;
-    startedAt: string | null;
-  };
-};
-
-type GuardianNetworkResponse = {
-  guardians: NetworkGuardian[];
-  total: number;
-  online: number;
-};
-
 type Props = {
   guardians: Guardian[];
   myLocation: SharedLocation;
+};
+
+type GuardianNetworkSummary = {
+  total: number;
+  online: number;
+  recent: number;
+  offline: number;
+  travelling: number;
+  emergencies: number;
+};
+
+type GuardianNetworkResponse = {
+  success: boolean;
+  guardians: GuardianNetworkItem[];
+  summary: GuardianNetworkSummary;
+  checkedAt?: string;
+  error?: string;
 };
 
 const GuardianCircleMap = dynamic(() => import("./GuardianCircleMap"), {
@@ -113,7 +83,9 @@ function timeAgo(value: string | Date | null | undefined) {
   return `Updated ${days}d ago`;
 }
 
-function locationStatus(updatedAt?: string | Date | null) {
+function locationStatus(
+  updatedAt?: string | Date | null
+): "ONLINE" | "RECENT" | "OFFLINE" {
   if (!updatedAt) return "OFFLINE";
 
   const minutes = Math.floor(
@@ -126,17 +98,14 @@ function locationStatus(updatedAt?: string | Date | null) {
   return "OFFLINE";
 }
 
-function batteryLabel(level: number | null) {
-  if (level === null) return "Unknown";
-
-  return `${level}%`;
-}
-
-function batteryIcon(level: number | null) {
-  if (level === null) return "🔋";
-  if (level <= 15) return "🪫";
-  return "🔋";
-}
+const emptySummary: GuardianNetworkSummary = {
+  total: 0,
+  online: 0,
+  recent: 0,
+  offline: 0,
+  travelling: 0,
+  emergencies: 0,
+};
 
 export default function GuardianCircleClient({
   guardians,
@@ -148,11 +117,15 @@ export default function GuardianCircleClient({
   const [mounted, setMounted] = useState(false);
 
   const [networkGuardians, setNetworkGuardians] = useState<
-    NetworkGuardian[]
+    GuardianNetworkItem[]
   >([]);
+
+  const [networkSummary, setNetworkSummary] =
+    useState<GuardianNetworkSummary>(emptySummary);
 
   const [networkLoading, setNetworkLoading] = useState(true);
   const [networkError, setNetworkError] = useState("");
+  const [refreshingNetwork, setRefreshingNetwork] = useState(false);
 
   const lastUploadRef = useRef<number>(0);
 
@@ -160,39 +133,53 @@ export default function GuardianCircleClient({
     ? locationStatus(location?.updatedAt)
     : "OFFLINE";
 
-  const loadGuardianNetwork = useCallback(async () => {
-    try {
-      const response = await fetch("/api/guardian-network", {
-        method: "GET",
-        cache: "no-store",
-      });
+  const connected = networkSummary.total || guardians.length;
 
-      const data = (await response.json()) as
-        | GuardianNetworkResponse
-        | { error?: string };
+  const safeCount =
+    connected -
+    networkSummary.emergencies -
+    networkSummary.travelling;
 
-      if (!response.ok) {
-        throw new Error(
-          "error" in data && data.error
-            ? data.error
+  const loadGuardianNetwork = useCallback(
+    async (manualRefresh = false) => {
+      try {
+        if (manualRefresh) {
+          setRefreshingNetwork(true);
+        }
+
+        setNetworkError("");
+
+        const response = await fetch("/api/guardian-network", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        const data =
+          (await response.json()) as GuardianNetworkResponse;
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Unable to load Guardian Network."
+          );
+        }
+
+        setNetworkGuardians(data.guardians ?? []);
+        setNetworkSummary(data.summary ?? emptySummary);
+      } catch (error) {
+        console.error("Guardian Network load error:", error);
+
+        setNetworkError(
+          error instanceof Error
+            ? error.message
             : "Unable to load Guardian Network."
         );
+      } finally {
+        setNetworkLoading(false);
+        setRefreshingNetwork(false);
       }
-
-      const networkData = data as GuardianNetworkResponse;
-
-      setNetworkGuardians(networkData.guardians ?? []);
-      setNetworkError("");
-    } catch (error) {
-      setNetworkError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load Guardian Network."
-      );
-    } finally {
-      setNetworkLoading(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -208,12 +195,12 @@ export default function GuardianCircleClient({
   useEffect(() => {
     void loadGuardianNetwork();
 
-    const intervalId = window.setInterval(() => {
+    const interval = window.setInterval(() => {
       void loadGuardianNetwork();
     }, 10000);
 
     return () => {
-      window.clearInterval(intervalId);
+      window.clearInterval(interval);
     };
   }, [loadGuardianNetwork]);
 
@@ -239,7 +226,42 @@ export default function GuardianCircleClient({
         lastUploadRef.current = now;
 
         try {
-          const res = await fetch("/api/location/share", {
+          let batteryLevel: number | null = null;
+
+          type BatteryManager = {
+            level: number;
+          };
+
+          type NavigatorWithBattery = Navigator & {
+            getBattery?: () => Promise<BatteryManager>;
+            connection?: {
+              effectiveType?: string;
+              type?: string;
+            };
+          };
+
+          const extendedNavigator =
+            navigator as NavigatorWithBattery;
+
+          if (extendedNavigator.getBattery) {
+            try {
+              const battery =
+                await extendedNavigator.getBattery();
+
+              batteryLevel = Math.round(
+                battery.level * 100
+              );
+            } catch {
+              batteryLevel = null;
+            }
+          }
+
+          const networkStatus =
+            extendedNavigator.connection?.effectiveType ||
+            extendedNavigator.connection?.type ||
+            (navigator.onLine ? "ONLINE" : "OFFLINE");
+
+          const response = await fetch("/api/location/share", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -248,19 +270,24 @@ export default function GuardianCircleClient({
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
               accuracy: position.coords.accuracy,
+              batteryLevel,
+              networkStatus,
             }),
           });
 
-          const data = await res.json();
+          const data = await response.json();
 
-          if (res.ok) {
-            setLocation(data.location);
-            setStatusText("Live location updated.");
-          } else {
+          if (!response.ok) {
             setStatusText(
               data.error || "Unable to share location."
             );
+            return;
           }
+
+          setLocation(data.location);
+          setStatusText("Live location updated.");
+
+          void loadGuardianNetwork();
         } catch {
           setStatusText(
             "Unable to reach server. Check your internet connection."
@@ -283,95 +310,47 @@ export default function GuardianCircleClient({
         navigator.geolocation.clearWatch(watchId);
       }
     };
-  }, [sharing]);
-
-  const displayedGuardians =
-    networkGuardians.length > 0
-      ? networkGuardians
-      : guardians.map<NetworkGuardian>((guardian) => ({
-          contactId: guardian.id,
-          userId: null,
-          name: guardian.name,
-          phone: guardian.phone,
-          email: guardian.email,
-          relation: guardian.relation,
-          isPrimary: guardian.isPrimary,
-          registered: false,
-          online: false,
-          latitude: null,
-          longitude: null,
-          accuracy: null,
-          batteryLevel: null,
-          networkStatus: "UNKNOWN",
-          lastSeen: null,
-          guardianMode: {
-            active: false,
-            status: null,
-            startedAt: null,
-          },
-          safeJourney: {
-            active: false,
-            status: null,
-            destination: null,
-            estimatedArrival: null,
-            startedAt: null,
-          },
-          emergency: {
-            active: false,
-            status: null,
-            silentSOS: false,
-            guardianMode: false,
-            safeJourney: false,
-            startedAt: null,
-          },
-        }));
-
-  const connected = displayedGuardians.length;
-
-  const onlineCount = displayedGuardians.filter(
-    (guardian) => guardian.online
-  ).length;
-
-  const travellingCount = displayedGuardians.filter(
-    (guardian) => guardian.safeJourney.active
-  ).length;
-
-  const emergencyCount = displayedGuardians.filter(
-    (guardian) => guardian.emergency.active
-  ).length;
-
-  const safeCount = Math.max(
-    0,
-    connected - travellingCount - emergencyCount
-  );
+  }, [sharing, loadGuardianNetwork]);
 
   return (
     <>
       <section className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/10 p-5">
-        <p className="text-sm font-black tracking-[0.25em] text-emerald-400">
-          CIRCLE STATUS
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-black tracking-[0.25em] text-emerald-400">
+              GUARDIAN NETWORK
+            </p>
 
-        <h2 className="mt-3 text-3xl font-black">
-          {connected} Guardian{connected === 1 ? "" : "s"} Connected
-        </h2>
+            <h2 className="mt-3 text-3xl font-black">
+              {connected} Guardian
+              {connected === 1 ? "" : "s"} Connected
+            </h2>
+          </div>
 
-        <p className="mt-2 text-sm text-white/50">
-          {onlineCount} currently online
-        </p>
+          <Link
+            href="/guardian-invitations"
+            className="shrink-0 rounded-full border border-emerald-500/30 bg-black/20 px-4 py-2 text-xs font-black text-emerald-300"
+          >
+            Invitations
+          </Link>
+        </div>
 
         <div className="mt-5 grid grid-cols-3 gap-3">
           <div className="rounded-2xl bg-black/30 p-4 text-center">
             <p className="text-2xl font-black text-emerald-400">
-              {safeCount}
+              {Math.max(0, safeCount)}
             </p>
-            <p className="mt-1 text-xs text-white/50">Safe</p>
+
+            <p className="mt-1 text-xs text-white/50">
+              Safe
+            </p>
           </div>
 
           <div className="rounded-2xl bg-black/30 p-4 text-center">
             <p className="text-2xl font-black text-yellow-300">
-              {travellingCount}
+              {networkSummary.travelling}
             </p>
+
             <p className="mt-1 text-xs text-white/50">
               Travelling
             </p>
@@ -379,11 +358,26 @@ export default function GuardianCircleClient({
 
           <div className="rounded-2xl bg-black/30 p-4 text-center">
             <p className="text-2xl font-black text-red-400">
-              {emergencyCount}
+              {networkSummary.emergencies}
             </p>
+
             <p className="mt-1 text-xs text-white/50">
               Emergency
             </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-3 text-center text-xs">
+          <div className="rounded-xl bg-black/20 px-3 py-2 text-emerald-300">
+            {networkSummary.online} Online
+          </div>
+
+          <div className="rounded-xl bg-black/20 px-3 py-2 text-yellow-200">
+            {networkSummary.recent} Recent
+          </div>
+
+          <div className="rounded-xl bg-black/20 px-3 py-2 text-white/50">
+            {networkSummary.offline} Offline
           </div>
         </div>
       </section>
@@ -453,7 +447,7 @@ export default function GuardianCircleClient({
           type="button"
           onClick={() => {
             setStatusText("");
-            setSharing((old) => !old);
+            setSharing((current) => !current);
           }}
           className={`mt-5 w-full rounded-full py-4 font-black ${
             sharing
@@ -461,51 +455,65 @@ export default function GuardianCircleClient({
               : "bg-emerald-500 text-black"
           }`}
         >
-          {sharing ? "Stop Sharing" : "Start Live Sharing"}
+          {sharing
+            ? "Stop Sharing"
+            : "Start Live Sharing"}
         </button>
       </section>
 
       <GuardianCircleMap
-        myLocation={
-          location
-            ? {
-                latitude: location.latitude,
-                longitude: location.longitude,
-                accuracy: location.accuracy,
-                updatedAt: String(location.updatedAt),
-              }
-            : null
+  myLocation={
+    location
+      ? {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracy: location.accuracy,
+          updatedAt: String(location.updatedAt),
         }
-        guardians={displayedGuardians.map((guardian) => ({
-          id: guardian.contactId,
-          name: guardian.name,
-          relation: guardian.relation,
-          latitude: guardian.latitude,
-          longitude: guardian.longitude,
-          accuracy: guardian.accuracy,
-          updatedAt: guardian.lastSeen,
-        }))}
-      />
+      : null
+  }
+  guardians={networkGuardians.map((guardian) => ({
+    id: guardian.id,
+    name: guardian.name,
+    relation: guardian.relation,
+    presence: guardian.presence,
+    lastSeen: guardian.lastSeen,
+    sharingLocation: guardian.sharingLocation,
+    latitude: guardian.latitude,
+    longitude: guardian.longitude,
+    accuracy: guardian.accuracy,
+    batteryLevel: guardian.batteryLevel,
+    networkStatus: guardian.networkStatus,
+    onJourney: guardian.onJourney,
+    inEmergency: guardian.inEmergency,
+  }))}
+/>
 
       <section className="mt-6 rounded-[2rem] border border-white/10 bg-[#111] p-5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-black">
               Trusted Guardians
             </h2>
 
             <p className="mt-1 text-sm text-white/45">
-              Live status refreshes every 10 seconds.
+              Live network status refreshes every 10 seconds.
             </p>
           </div>
 
           <div className="flex gap-2">
-            <Link
-              href="/guardian-invitations"
-              className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/65"
+            <button
+              type="button"
+              disabled={refreshingNetwork}
+              onClick={() =>
+                void loadGuardianNetwork(true)
+              }
+              className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/60 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Invitations
-            </Link>
+              {refreshingNetwork
+                ? "Refreshing..."
+                : "Refresh"}
+            </button>
 
             <Link
               href="/guardian-circle/add"
@@ -523,13 +531,12 @@ export default function GuardianCircleClient({
         )}
 
         <div className="mt-5 space-y-4">
-          {networkLoading && displayedGuardians.length === 0 ? (
-            <div className="animate-pulse rounded-[2rem] border border-white/10 bg-black/30 p-5">
-              <div className="h-14 w-14 rounded-full bg-white/10" />
-              <div className="mt-4 h-5 w-40 rounded bg-white/10" />
-              <div className="mt-3 h-20 rounded-2xl bg-white/5" />
-            </div>
-          ) : displayedGuardians.length === 0 ? (
+          {networkLoading ? (
+            <>
+              <GuardianLoadingCard />
+              <GuardianLoadingCard />
+            </>
+          ) : networkGuardians.length === 0 ? (
             <div className="rounded-[2rem] border border-white/10 bg-black/30 p-5 text-center">
               <p className="text-5xl">👥</p>
 
@@ -537,9 +544,9 @@ export default function GuardianCircleClient({
                 No Guardians Yet
               </h3>
 
-              <p className="mt-2 text-sm text-white/60">
-                Invite trusted people who can receive your emergency
-                alerts and location updates.
+              <p className="mt-2 text-sm leading-6 text-white/60">
+                Invite trusted people who can receive your
+                emergency alerts, journeys and live location.
               </p>
 
               <Link
@@ -550,142 +557,11 @@ export default function GuardianCircleClient({
               </Link>
             </div>
           ) : (
-            displayedGuardians.map((guardian) => (
-              <div
-                key={guardian.contactId}
-                className={`rounded-[2rem] border p-5 ${
-                  guardian.emergency.active
-                    ? "border-red-500/40 bg-red-500/10"
-                    : guardian.online
-                      ? "border-emerald-500/20 bg-black/30"
-                      : "border-white/10 bg-black/30"
-                }`}
-              >
-                <div className="flex items-start gap-4">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-3xl">
-                    👤
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="truncate text-xl font-black">
-                          {guardian.name}
-                        </h3>
-
-                        <p
-                          className={`mt-1 text-sm font-bold ${
-                            guardian.online
-                              ? "text-emerald-400"
-                              : "text-white/45"
-                          }`}
-                        >
-                          {guardian.online
-                            ? "🟢 Online"
-                            : "⚪ Offline"}
-                        </p>
-                      </div>
-
-                      {guardian.isPrimary && (
-                        <span className="shrink-0 rounded-full bg-emerald-500 px-3 py-1 text-xs font-black text-black">
-                          Primary
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                      <div className="rounded-2xl bg-[#111] p-3">
-                        <p className="text-white/40">Battery</p>
-                        <p className="mt-1 font-bold">
-                          {batteryIcon(guardian.batteryLevel)}{" "}
-                          {batteryLabel(guardian.batteryLevel)}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl bg-[#111] p-3">
-                        <p className="text-white/40">Network</p>
-                        <p className="mt-1 truncate font-bold">
-                          📶 {guardian.networkStatus}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl bg-[#111] p-3">
-                        <p className="text-white/40">Relation</p>
-                        <p className="mt-1 truncate font-bold">
-                          {guardian.relation || "Trusted"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl bg-[#111] p-3">
-                        <p className="text-white/40">Last seen</p>
-                        <p className="mt-1 truncate font-bold">
-                          {timeAgo(guardian.lastSeen)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {guardian.guardianMode.active && (
-                        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-300">
-                          🛡️ Guardian Mode Active
-                        </span>
-                      )}
-
-                      {guardian.safeJourney.active && (
-                        <span className="rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs font-black text-yellow-300">
-                          🚗 Safe Journey
-                        </span>
-                      )}
-
-                      {guardian.emergency.active && (
-                        <span className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-black text-red-300">
-                          🚨 Emergency Active
-                        </span>
-                      )}
-
-                      {!guardian.registered && (
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/45">
-                          Awaiting MyOgun registration
-                        </span>
-                      )}
-                    </div>
-
-                    {guardian.safeJourney.destination && (
-                      <div className="mt-4 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-3">
-                        <p className="text-sm font-bold text-yellow-200">
-                          Travelling to{" "}
-                          {guardian.safeJourney.destination}
-                        </p>
-
-                        {guardian.safeJourney.estimatedArrival && (
-                          <p className="mt-1 text-xs text-yellow-100/60">
-                            ETA:{" "}
-                            {new Date(
-                              guardian.safeJourney.estimatedArrival
-                            ).toLocaleString("en-GB")}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {guardian.latitude !== null &&
-                    guardian.longitude !== null ? (
-                      <div className="mt-4 rounded-2xl border border-white/10 bg-[#111] p-3">
-                        <p className="text-sm text-white/55">
-                          📍 {guardian.latitude.toFixed(5)},{" "}
-                          {guardian.longitude.toFixed(5)}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="mt-4 rounded-2xl border border-white/10 bg-[#111] p-3">
-                        <p className="text-sm text-white/50">
-                          📍 Live location is not currently available.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+            networkGuardians.map((guardian) => (
+              <GuardianStatusCard
+                key={guardian.id}
+                guardian={guardian}
+              />
             ))
           )}
         </div>
@@ -697,7 +573,9 @@ export default function GuardianCircleClient({
           className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/10 p-5 text-center transition active:scale-95"
         >
           <p className="text-4xl">🛡️</p>
-          <p className="mt-3 font-black">Guardian Mode</p>
+          <p className="mt-3 font-black">
+            Guardian Mode
+          </p>
         </Link>
 
         <Link
@@ -705,9 +583,31 @@ export default function GuardianCircleClient({
           className="rounded-[2rem] border border-red-500/20 bg-red-500/10 p-5 text-center transition active:scale-95"
         >
           <p className="text-4xl">🚨</p>
-          <p className="mt-3 font-black">Silent SOS</p>
+          <p className="mt-3 font-black">
+            Silent SOS
+          </p>
         </Link>
       </section>
     </>
+  );
+}
+
+function GuardianLoadingCard() {
+  return (
+    <div className="animate-pulse rounded-[2rem] border border-white/10 bg-black/30 p-5">
+      <div className="flex gap-4">
+        <div className="h-14 w-14 rounded-full bg-white/10" />
+
+        <div className="flex-1">
+          <div className="h-5 w-36 rounded bg-white/10" />
+          <div className="mt-3 h-4 w-24 rounded bg-white/10" />
+
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="h-16 rounded-2xl bg-white/5" />
+            <div className="h-16 rounded-2xl bg-white/5" />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

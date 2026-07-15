@@ -2,18 +2,43 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 
-function normalizePhone(phone: string | null | undefined) {
-  return (phone ?? "").replace(/[^\d+]/g, "").trim();
+function normalizePhone(phone: string) {
+  return phone.replace(/[^\d+]/g, "").trim();
 }
 
-function isRecentlyOnline(updatedAt: Date | null | undefined) {
+function getPresence(updatedAt: Date | null) {
   if (!updatedAt) {
-    return false;
+    return {
+      online: false,
+      presence: "OFFLINE" as const,
+      sharingLocation: false,
+    };
   }
 
-  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  const ageMs = Date.now() - updatedAt.getTime();
+  const ageMinutes = ageMs / 60000;
 
-  return updatedAt.getTime() >= fiveMinutesAgo;
+  if (ageMinutes <= 2) {
+    return {
+      online: true,
+      presence: "ONLINE" as const,
+      sharingLocation: true,
+    };
+  }
+
+  if (ageMinutes <= 15) {
+    return {
+      online: false,
+      presence: "RECENT" as const,
+      sharingLocation: true,
+    };
+  }
+
+  return {
+    online: false,
+    presence: "OFFLINE" as const,
+    sharingLocation: false,
+  };
 }
 
 export async function GET() {
@@ -27,7 +52,7 @@ export async function GET() {
       );
     }
 
-    const guardianContacts = await prisma.guardianContact.findMany({
+    const contacts = await prisma.guardianContact.findMany({
       where: {
         userId: currentUser.id,
       },
@@ -36,296 +61,212 @@ export async function GET() {
           isPrimary: "desc",
         },
         {
-          createdAt: "asc",
+          createdAt: "desc",
         },
       ],
     });
 
-    if (guardianContacts.length === 0) {
+    if (contacts.length === 0) {
       return NextResponse.json({
+        success: true,
         guardians: [],
-        total: 0,
-        online: 0,
+        summary: {
+          total: 0,
+          online: 0,
+          recent: 0,
+          offline: 0,
+          travelling: 0,
+          emergencies: 0,
+        },
       });
     }
 
-    const normalizedContactPhones = guardianContacts
-      .map((contact) => normalizePhone(contact.phone))
-      .filter(Boolean);
+    const contactPhones = contacts.map((contact) => contact.phone);
 
-    const possibleGuardianUsers = await prisma.user.findMany({
+    const registeredUsers = await prisma.user.findMany({
       where: {
         phone: {
-          in: normalizedContactPhones,
+          in: contactPhones,
         },
       },
       select: {
         id: true,
         name: true,
         phone: true,
+        sharedLocations: {
+          take: 1,
+          orderBy: {
+            updatedAt: "desc",
+          },
+          select: {
+            latitude: true,
+            longitude: true,
+            accuracy: true,
+            batteryLevel: true,
+            status: true,
+            updatedAt: true,
+          },
+        },
+        safeJourneys: {
+          where: {
+            status: {
+              in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+            },
+          },
+          take: 1,
+          orderBy: {
+            startedAt: "desc",
+          },
+          select: {
+            id: true,
+            destination: true,
+            estimatedArrival: true,
+            latitude: true,
+            longitude: true,
+            status: true,
+            startedAt: true,
+          },
+        },
+        emergencySessions: {
+          where: {
+            status: {
+              in: ["ACTIVE", "MONITORING", "RESPONDING"],
+            },
+          },
+          take: 1,
+          orderBy: {
+            startedAt: "desc",
+          },
+          select: {
+            id: true,
+            status: true,
+            latitude: true,
+            longitude: true,
+            startedAt: true,
+            guardianMode: true,
+            silentSOS: true,
+            safeJourney: true,
+          },
+        },
       },
     });
 
-    const guardianUserByPhone = new Map(
-      possibleGuardianUsers.map((user) => [
+    const usersByPhone = new Map(
+      registeredUsers.map((user) => [
         normalizePhone(user.phone),
         user,
       ])
     );
 
-    const guardianUserIds = possibleGuardianUsers.map((user) => user.id);
-
-    const [
-      sharedLocations,
-      guardianSessions,
-      safeJourneys,
-      emergencySessions,
-    ] = guardianUserIds.length
-      ? await Promise.all([
-          prisma.sharedLocation.findMany({
-            where: {
-              userId: {
-                in: guardianUserIds,
-              },
-            },
-          }),
-
-          prisma.guardianSession.findMany({
-            where: {
-              userId: {
-                in: guardianUserIds,
-              },
-              status: "ACTIVE",
-            },
-            orderBy: {
-              updatedAt: "desc",
-            },
-          }),
-
-          prisma.safeJourney.findMany({
-            where: {
-              userId: {
-                in: guardianUserIds,
-              },
-              status: {
-                in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
-              },
-            },
-            orderBy: {
-              updatedAt: "desc",
-            },
-          }),
-
-          prisma.emergencySession.findMany({
-            where: {
-              userId: {
-                in: guardianUserIds,
-              },
-              status: {
-                in: ["ACTIVE", "MONITORING", "RESPONDING"],
-              },
-            },
-            orderBy: {
-              updatedAt: "desc",
-            },
-          }),
-        ])
-      : [[], [], [], []];
-
-    const sharedLocationByUserId = new Map(
-      sharedLocations.map((location) => [location.userId, location])
-    );
-
-    const activeGuardianSessionByUserId = new Map<
-      string,
-      (typeof guardianSessions)[number]
-    >();
-
-    for (const session of guardianSessions) {
-      if (
-        session.userId &&
-        !activeGuardianSessionByUserId.has(session.userId)
-      ) {
-        activeGuardianSessionByUserId.set(session.userId, session);
-      }
-    }
-
-    const activeJourneyByUserId = new Map<
-      string,
-      (typeof safeJourneys)[number]
-    >();
-
-    for (const journey of safeJourneys) {
-      if (journey.userId && !activeJourneyByUserId.has(journey.userId)) {
-        activeJourneyByUserId.set(journey.userId, journey);
-      }
-    }
-
-    const activeEmergencyByUserId = new Map<
-      string,
-      (typeof emergencySessions)[number]
-    >();
-
-    for (const emergency of emergencySessions) {
-      if (
-        emergency.userId &&
-        !activeEmergencyByUserId.has(emergency.userId)
-      ) {
-        activeEmergencyByUserId.set(emergency.userId, emergency);
-      }
-    }
-
-    const guardians = guardianContacts.map((contact) => {
-      const normalizedPhone = normalizePhone(contact.phone);
-      const guardianUser = guardianUserByPhone.get(normalizedPhone);
-
-      if (!guardianUser) {
-        return {
-          contactId: contact.id,
-          userId: null,
-          name: contact.name,
-          phone: contact.phone,
-          email: contact.email,
-          relation: contact.relation,
-          isPrimary: contact.isPrimary,
-
-          registered: false,
-          online: false,
-
-          latitude: null,
-          longitude: null,
-          accuracy: null,
-
-          batteryLevel: null,
-          networkStatus: "UNKNOWN",
-          lastSeen: null,
-
-          guardianMode: {
-            active: false,
-            status: null,
-            startedAt: null,
-          },
-
-          safeJourney: {
-            active: false,
-            status: null,
-            destination: null,
-            estimatedArrival: null,
-            startedAt: null,
-          },
-
-          emergency: {
-            active: false,
-            status: null,
-            silentSOS: false,
-            guardianMode: false,
-            safeJourney: false,
-            startedAt: null,
-          },
-        };
-      }
-
-      const sharedLocation = sharedLocationByUserId.get(guardianUser.id);
-      const guardianSession = activeGuardianSessionByUserId.get(
-        guardianUser.id
-      );
-      const safeJourney = activeJourneyByUserId.get(guardianUser.id);
-      const emergencySession = activeEmergencyByUserId.get(
-        guardianUser.id
+    const guardians = contacts.map((contact) => {
+      const registeredUser = usersByPhone.get(
+        normalizePhone(contact.phone)
       );
 
-      const lastSeen =
-        sharedLocation?.updatedAt ??
-        guardianSession?.updatedAt ??
-        safeJourney?.updatedAt ??
-        emergencySession?.updatedAt ??
-        null;
+      const location =
+        registeredUser?.sharedLocations[0] ?? null;
 
-      const online =
-        sharedLocation?.status === "ONLINE" &&
-        isRecentlyOnline(sharedLocation.updatedAt);
+      const activeJourney =
+        registeredUser?.safeJourneys[0] ?? null;
+
+      const activeEmergency =
+        registeredUser?.emergencySessions[0] ?? null;
+
+      const presence = getPresence(
+        location?.updatedAt ?? null
+      );
 
       return {
-        contactId: contact.id,
-        userId: guardianUser.id,
-        name: guardianUser.name || contact.name,
-        phone: guardianUser.phone,
+        id: contact.id,
+        userId: registeredUser?.id ?? null,
+
+        name: registeredUser?.name || contact.name,
+        phone: contact.phone,
         email: contact.email,
         relation: contact.relation,
         isPrimary: contact.isPrimary,
 
-        registered: true,
-        online,
+        registered: Boolean(registeredUser),
 
-        latitude:
-          sharedLocation?.latitude ??
-          guardianSession?.latitude ??
-          safeJourney?.latitude ??
-          emergencySession?.latitude ??
-          null,
+        online: presence.online,
+        presence: presence.presence,
+        lastSeen: location?.updatedAt ?? null,
+        sharingLocation: presence.sharingLocation,
 
-        longitude:
-          sharedLocation?.longitude ??
-          guardianSession?.longitude ??
-          safeJourney?.longitude ??
-          emergencySession?.longitude ??
-          null,
+        latitude: location?.latitude ?? null,
+        longitude: location?.longitude ?? null,
+        accuracy: location?.accuracy ?? null,
 
-        accuracy: sharedLocation?.accuracy ?? null,
+        batteryLevel: location?.batteryLevel ?? null,
+        networkStatus: location?.status ?? "UNKNOWN",
 
-        batteryLevel:
-          sharedLocation?.batteryLevel ??
-          guardianSession?.batteryLevel ??
-          emergencySession?.battery ??
-          null,
+        onJourney: Boolean(activeJourney),
+        journey: activeJourney
+          ? {
+              id: activeJourney.id,
+              destination: activeJourney.destination,
+              estimatedArrival:
+                activeJourney.estimatedArrival,
+              latitude: activeJourney.latitude,
+              longitude: activeJourney.longitude,
+              status: activeJourney.status,
+              startedAt: activeJourney.startedAt,
+            }
+          : null,
 
-        networkStatus:
-          guardianSession?.networkStatus ??
-          emergencySession?.network ??
-          sharedLocation?.status ??
-          "UNKNOWN",
-
-        lastSeen: lastSeen?.toISOString() ?? null,
-
-        guardianMode: {
-          active: Boolean(guardianSession),
-          status: guardianSession?.status ?? null,
-          startedAt:
-            guardianSession?.startedAt.toISOString() ?? null,
-        },
-
-        safeJourney: {
-          active: Boolean(safeJourney),
-          status: safeJourney?.status ?? null,
-          destination: safeJourney?.destination ?? null,
-          estimatedArrival:
-            safeJourney?.estimatedArrival?.toISOString() ?? null,
-          startedAt: safeJourney?.startedAt.toISOString() ?? null,
-        },
-
-        emergency: {
-          active: Boolean(emergencySession),
-          status: emergencySession?.status ?? null,
-          silentSOS: emergencySession?.silentSOS ?? false,
-          guardianMode: emergencySession?.guardianMode ?? false,
-          safeJourney: emergencySession?.safeJourney ?? false,
-          startedAt:
-            emergencySession?.startedAt.toISOString() ?? null,
-        },
+        inEmergency: Boolean(activeEmergency),
+        emergency: activeEmergency
+          ? {
+              id: activeEmergency.id,
+              status: activeEmergency.status,
+              latitude: activeEmergency.latitude,
+              longitude: activeEmergency.longitude,
+              startedAt: activeEmergency.startedAt,
+              guardianMode:
+                activeEmergency.guardianMode,
+              silentSOS: activeEmergency.silentSOS,
+              safeJourney:
+                activeEmergency.safeJourney,
+            }
+          : null,
       };
     });
 
-    const onlineCount = guardians.filter(
-      (guardian) => guardian.online
-    ).length;
-
-    return NextResponse.json({
-      guardians,
+    const summary = {
       total: guardians.length,
-      online: onlineCount,
-    });
+      online: guardians.filter(
+        (guardian) => guardian.presence === "ONLINE"
+      ).length,
+      recent: guardians.filter(
+        (guardian) => guardian.presence === "RECENT"
+      ).length,
+      offline: guardians.filter(
+        (guardian) => guardian.presence === "OFFLINE"
+      ).length,
+      travelling: guardians.filter(
+        (guardian) => guardian.onJourney
+      ).length,
+      emergencies: guardians.filter(
+        (guardian) => guardian.inEmergency
+      ).length,
+    };
+
+    return NextResponse.json(
+      {
+        success: true,
+        guardians,
+        summary,
+        checkedAt: new Date().toISOString(),
+      },
+      {
+        headers: {
+          "Cache-Control":
+            "no-store, no-cache, must-revalidate",
+        },
+      }
+    );
   } catch (error) {
-    console.error("GET guardian network error:", error);
+    console.error("Guardian network GET error:", error);
 
     return NextResponse.json(
       {

@@ -75,7 +75,13 @@ function getVibrationPattern(level: DangerLevel) {
   return null;
 }
 
-export default function NearbyDangerAlert() {
+type Props = {
+  onDangerChange?: (incident: NearbyIncident | null) => void;
+};
+
+export default function NearbyDangerAlert({
+  onDangerChange,
+}: Props) {
   const [loading, setLoading] = useState(true);
   const [closest, setClosest] = useState<NearbyIncident | null>(null);
   const [error, setError] = useState("");
@@ -102,8 +108,10 @@ export default function NearbyDangerAlert() {
             const data = await res.json();
 
             if (data.closest) {
-              const incident = data.closest as NearbyIncident;
-              setClosest(incident);
+            const incident = data.closest as NearbyIncident;
+
+            setClosest(incident);
+            onDangerChange?.(incident);
 
               const level = getDangerLevel(incident.distance);
               const vibrationPattern = getVibrationPattern(level);
@@ -121,6 +129,7 @@ export default function NearbyDangerAlert() {
               }
             } else {
               setClosest(null);
+              onDangerChange?.(null);
             }
 
             setLastChecked(new Date());
@@ -148,7 +157,7 @@ export default function NearbyDangerAlert() {
     const timer = setInterval(checkNearbyDanger, 30000);
 
     return () => clearInterval(timer);
-  }, []);
+     }, [onDangerChange]);
 
   if (loading) {
     return (
