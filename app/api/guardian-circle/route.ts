@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  GuardianService,
+  GuardianServiceError,
+} from "@/lib/services/GuardianService";
 
 export async function GET() {
   try {
@@ -13,14 +16,7 @@ export async function GET() {
       );
     }
 
-    const guardians = await prisma.guardianContact.findMany({
-      where: {
-        userId: user.id,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    const guardians = await GuardianService.getContacts(user.id);
 
     return NextResponse.json({ guardians });
   } catch (error) {
@@ -46,60 +42,25 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    const name = typeof body.name === "string" ? body.name.trim() : "";
-    const phone = typeof body.phone === "string" ? body.phone.trim() : "";
-    const email =
-      typeof body.email === "string" && body.email.trim()
-        ? body.email.trim()
-        : null;
-    const relation =
-      typeof body.relation === "string" && body.relation.trim()
-        ? body.relation.trim()
-        : null;
-    const isPrimary = Boolean(body.isPrimary);
-
-    if (!name || !phone) {
-      return NextResponse.json(
-        { error: "Name and phone number are required." },
-        { status: 400 }
-      );
-    }
-
-    const existingGuardian = await prisma.guardianContact.findFirst({
-      where: {
-        userId: user.id,
-        phone,
-      },
-    });
-
-    if (existingGuardian) {
-      return NextResponse.json(
-        { error: "A guardian with this phone number already exists." },
-        { status: 409 }
-      );
-    }
-
-    if (isPrimary) {
-      await prisma.guardianContact.updateMany({
-        where: {
-          userId: user.id,
-          isPrimary: true,
-        },
-        data: {
-          isPrimary: false,
-        },
-      });
-    }
-
-    const guardian = await prisma.guardianContact.create({
-      data: {
-        userId: user.id,
-        name,
-        phone,
-        email,
-        relation,
-        isPrimary,
-      },
+    const guardian = await GuardianService.addGuardian({
+      userId: user.id,
+      name:
+        typeof body.name === "string"
+          ? body.name
+          : "",
+      phone:
+        typeof body.phone === "string"
+          ? body.phone
+          : "",
+      email:
+        typeof body.email === "string"
+          ? body.email
+          : null,
+      relation:
+        typeof body.relation === "string"
+          ? body.relation
+          : null,
+      isPrimary: Boolean(body.isPrimary),
     });
 
     return NextResponse.json(
@@ -111,6 +72,13 @@ export async function POST(req: Request) {
     );
   } catch (error) {
     console.error("Guardian Circle POST error:", error);
+
+    if (error instanceof GuardianServiceError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
 
     return NextResponse.json(
       { error: "Failed to add guardian." },

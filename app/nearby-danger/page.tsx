@@ -25,7 +25,7 @@ export default function NearbyDangerPage() {
         setStatus("Scanning nearby verified danger zones...");
 
         const response = await fetch(
-          `/api/danger/nearby?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}`
+          `/api/nearby-danger?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}`
         );
 
         const data = await response.json();

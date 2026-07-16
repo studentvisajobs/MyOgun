@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  GuardianService,
+  GuardianServiceError,
+} from "@/lib/services/GuardianService";
 
 export async function PATCH(
   request: NextRequest,
@@ -11,44 +14,18 @@ export async function PATCH(
 
     if (!user) {
       return NextResponse.json(
-        { error: "Unauthorized" },
+        { error: "You must be logged in." },
         { status: 401 }
       );
     }
 
     const { id } = await params;
 
-    const invitation = await prisma.guardianInvitation.findUnique({
-      where: {
-        id,
-      },
-    });
-
-    if (!invitation) {
-      return NextResponse.json(
-        { error: "Invitation not found." },
-        { status: 404 }
-      );
-    }
-
-    if (
-      invitation.receiverId !== user.id &&
-      invitation.receiverPhone !== user.phone
-    ) {
-      return NextResponse.json(
-        { error: "Forbidden" },
-        { status: 403 }
-      );
-    }
-
-    await prisma.guardianInvitation.update({
-      where: {
-        id,
-      },
-      data: {
-        status: "REJECTED",
-        receiverId: user.id,
-      },
+    await GuardianService.rejectInvitation({
+      invitationId: id,
+      receiverId: user.id,
+      receiverName: user.name,
+      receiverPhone: user.phone,
     });
 
     return NextResponse.json({
@@ -56,15 +33,21 @@ export async function PATCH(
       message: "Invitation rejected.",
     });
   } catch (error) {
-    console.error(error);
+    console.error(
+      "Reject guardian invitation error:",
+      error
+    );
+
+    if (error instanceof GuardianServiceError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
 
     return NextResponse.json(
-      {
-        error: "Unable to reject invitation.",
-      },
-      {
-        status: 500,
-      }
+      { error: "Unable to reject invitation." },
+      { status: 500 }
     );
   }
 }

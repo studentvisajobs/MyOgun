@@ -1,48 +1,42 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  JourneyService,
+  JourneyServiceError,
+} from "@/lib/services/JourneyService";
 
 export async function POST(req: Request) {
   try {
     const user = await getCurrentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Login required." }, { status: 401 });
-    }
-
-    const body = await req.json();
-    const journeyId = String(body.journeyId || "");
-
-    if (!journeyId) {
       return NextResponse.json(
-        { error: "Journey ID is required." },
-        { status: 400 }
+        { error: "Login required." },
+        { status: 401 }
       );
     }
 
-    const journey = await prisma.safeJourney.update({
-      where: {
-        id: journeyId,
-        userId: user.id,
-      },
-      data: {
-        status: "CHECKED_IN",
-        timeline: {
-          create: {
-            message: "User checked in safely.",
-          },
-        },
-      },
-      include: {
-        timeline: {
-          orderBy: { createdAt: "desc" },
-        },
-      },
+    const body = await req.json();
+
+    const journey = await JourneyService.checkIn({
+      userId: user.id,
+      journeyId: String(body.journeyId || ""),
     });
 
-    return NextResponse.json({ journey });
+    return NextResponse.json({
+      success: true,
+      journey,
+    });
   } catch (error) {
     console.error("Journey check-in error:", error);
+
+    if (error instanceof JourneyServiceError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+
     return NextResponse.json(
       { error: "Failed to check in." },
       { status: 500 }

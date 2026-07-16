@@ -1,68 +1,88 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { distanceInMeters } from "@/lib/location/distance";
+import {
+  LocationService,
+  LocationServiceError,
+} from "@/lib/services/LocationService";
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
 
-  const lat = Number(searchParams.get("lat"));
-  const lng = Number(searchParams.get("lng"));
-  const radius = Number(searchParams.get("radius") || 5000);
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return NextResponse.json(
-      { error: "Latitude and longitude are required." },
-      { status: 400 }
+    const latitude = Number(
+      searchParams.get("lat")
     );
-  }
 
-  const incidents = await prisma.incident.findMany({
-    where: {
-      status: {
-        in: ["PENDING", "VERIFIED", "CRITICAL", "RESPONDING"],
-      },
-    },
-    include: {
-      evidence: true,
-      confirmations: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+    const longitude = Number(
+      searchParams.get("lng")
+    );
 
-  const nearby = incidents
-    .map((incident) => {
-      const distance = distanceInMeters(
-        lat,
-        lng,
-        incident.latitude,
-        incident.longitude
+    const requestedRadius = Number(
+      searchParams.get("radius") || 5000
+    );
+
+    const radius = Math.min(
+      50_000,
+      Math.max(100, requestedRadius)
+    );
+
+    const incidents =
+      await LocationService.getNearbyIncidents(
+        latitude,
+        longitude,
+        radius
       );
 
-      return {
-        id: incident.id,
-        title: incident.title,
-        type: incident.type,
-        status: incident.status,
-        confidenceScore: incident.confidenceScore,
-        area: incident.area,
-        localGovernment: incident.localGovernment,
-        latitude: incident.latitude,
-        longitude: incident.longitude,
-        distance,
-        evidenceCount: incident.evidence.length,
-        witnessCount: incident.confirmations.filter(
-          (item) => item.vote === "CONFIRM"
+    const nearby = incidents.map((incident) => ({
+      id: incident.id,
+      title: incident.title,
+      type: incident.type,
+      status: incident.status,
+      confidenceScore:
+        incident.confidenceScore,
+      area: incident.area,
+      localGovernment:
+        incident.localGovernment,
+      latitude: incident.latitude,
+      longitude: incident.longitude,
+      distance: incident.distance,
+      evidenceCount:
+        incident.evidence.length,
+      witnessCount:
+        incident.confirmations.filter(
+          (confirmation) =>
+            confirmation.vote === "CONFIRM"
         ).length,
-      };
-    })
-    .filter((item) => item.distance <= radius)
-    .sort((a, b) => a.distance - b.distance);
+    }));
 
-  return NextResponse.json({
-    success: true,
-    nearby,
-    closest: nearby[0] || null,
-  });
+    return NextResponse.json({
+      success: true,
+      nearby,
+      closest: nearby[0] || null,
+    });
+  } catch (error) {
+    console.error(
+      "Nearby danger GET error:",
+      error
+    );
+
+    if (error instanceof LocationServiceError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+        },
+        {
+          status: error.status,
+        }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        error: "Unable to check nearby danger.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
 }
