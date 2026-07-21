@@ -26,4 +26,5 @@ export type EmergencyEngineOptions = {
   onLocation: (location: EmergencyLocation) => void;
   onBattery: (battery: number | null) => void;
   onSession: (sessionId: string | null) => void;
+  onStartedAt?: (startedAt: string | null) => void;
 };

@@ -15,6 +15,8 @@ import { EvidenceEngine } from "@/lib/evidence/EvidenceEngine";
 export default function SilentSOSClient() {
   const [active, setActive] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [startedAt, setStartedAt] =
+  useState<string | null>(null);
   const [status, setStatus] = useState<EmergencyStatus>("READY");
   const [battery, setBattery] = useState<number | null>(null);
   const [location, setLocation] = useState<EmergencyLocation | null>(null);
@@ -50,6 +52,9 @@ export default function SilentSOSClient() {
       onTimeline: (item) => setTimeline((old) => [item, ...old]),
       onLocation: (loc) => setLocation(loc),
       onBattery: (level) => setBattery(level),
+      onStartedAt: (value) => {
+      setStartedAt(value);
+      },
       onSession: async (id) => {
         setSessionId(id);
 
@@ -98,19 +103,37 @@ export default function SilentSOSClient() {
     };
   }, []);
 
-  useEffect(() => {
-    let timer: NodeJS.Timeout | undefined;
+ useEffect(() => {
+  if (!active || !startedAt) {
+    return;
+  }
 
-    if (active) {
-      timer = setInterval(() => {
-        setSeconds((s) => s + 1);
-      }, 1000);
+  const updateTimer = () => {
+    const startTime =
+      new Date(startedAt).getTime();
+
+    if (Number.isNaN(startTime)) {
+      return;
     }
 
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [active]);
+    const elapsed = Math.floor(
+      (Date.now() - startTime) / 1000
+    );
+
+    setSeconds(Math.max(0, elapsed));
+  };
+
+  updateTimer();
+
+  const timer = setInterval(
+    updateTimer,
+    1000
+  );
+
+  return () => {
+    clearInterval(timer);
+  };
+  }, [active, startedAt]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -167,6 +190,7 @@ export default function SilentSOSClient() {
 
           setTimeout(async () => {
             setSeconds(0);
+            setStartedAt(null);
             await engineRef.current?.start();
           }, 0);
 
@@ -195,6 +219,7 @@ export default function SilentSOSClient() {
       await engineRef.current.stop();
 
       setSeconds(0);
+      setStartedAt(null);
       setHoldProgress(0);
       setSessionId(null);
       setResponders([]);

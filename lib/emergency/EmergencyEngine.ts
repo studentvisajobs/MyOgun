@@ -92,6 +92,10 @@ export class EmergencyEngine {
 
       this.sessionId = response.session.id;
 
+        this.options.onStartedAt?.(
+        response.session.startedAt ?? null
+      );
+
 this.addTimeline(
   "Assigning guardian responders..."
 );
@@ -229,7 +233,11 @@ async resume() {
     }
 
     this.sessionId = session.id;
-    this.running = true;
+this.running = true;
+
+this.options.onStartedAt?.(
+  session.startedAt ?? null
+);
 
     this.options.onSession(session.id);
     this.options.onBattery(
@@ -295,7 +303,8 @@ async resume() {
     this.sessionId = null;
 
     this.options.onSession(null);
-    this.setStatus("READY");
+this.options.onStartedAt?.(null);
+this.setStatus("READY");
 
     this.addTimeline(
       "The emergency session has already ended."
@@ -361,8 +370,9 @@ dispose() {
       );
 
       this.sessionId = null;
-      this.options.onSession(null);
-      this.running = false;
+this.options.onSession(null);
+this.options.onStartedAt?.(null);
+this.running = false;
 
       this.setStatus("STOPPED");
     } catch (error) {
