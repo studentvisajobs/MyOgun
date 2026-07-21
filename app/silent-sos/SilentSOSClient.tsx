@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+
 import { useEffect, useRef, useState } from "react";
 import ResponderStatus from "./components/ResponderStatus";
 
@@ -90,10 +90,13 @@ export default function SilentSOSClient() {
       },
     });
 
+    void engineRef.current.resume();
+
     return () => {
-      engineRef.current?.stop();
+      engineRef.current?.dispose();
+      engineRef.current = null;
     };
-  }, [battery, location]);
+  }, []);
 
   useEffect(() => {
     let timer: NodeJS.Timeout | undefined;
@@ -184,9 +187,28 @@ export default function SilentSOSClient() {
   }
 
   async function stopSOS() {
-    await engineRef.current?.stop();
-    setSeconds(0);
-    setHoldProgress(0);
+    if (!engineRef.current) {
+      return;
+    }
+
+    try {
+      await engineRef.current.stop();
+
+      setSeconds(0);
+      setHoldProgress(0);
+      setSessionId(null);
+      setResponders([]);
+    } catch (error) {
+      console.error("Stop SOS error:", error);
+
+      setTimeline((old) => [
+        {
+          time: new Date().toLocaleTimeString(),
+          message: "Unable to stop SOS. Please try again.",
+        },
+        ...old,
+      ]);
+    }
   }
 
   return (
@@ -239,7 +261,10 @@ export default function SilentSOSClient() {
         </div>
       ) : (
         <button
-          onClick={stopSOS}
+          type="button"
+          onClick={() => {
+            void stopSOS();
+          }}
           className="mt-8 w-full rounded-full bg-white py-4 text-lg font-black text-black"
         >
           Stop SOS

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  GuardianSessionError,
+  GuardianSessionService,
+} from "@/lib/services/GuardianSessionService";
 
 export async function POST(req: Request) {
   try {
@@ -15,8 +18,10 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    const sessionId = String(body.sessionId || "");
-    const message = String(body.message || "Guardian location updated.");
+    const sessionId =
+      typeof body.sessionId === "string"
+        ? body.sessionId.trim()
+        : "";
 
     if (!sessionId) {
       return NextResponse.json(
@@ -25,71 +30,67 @@ export async function POST(req: Request) {
       );
     }
 
-    const latitude =
-      body.latitude === undefined || body.latitude === null
-        ? null
-        : Number(body.latitude);
+    const activeSession =
+      await GuardianSessionService.getActive(user.id);
+    
+    console.log("Guardian update check:", {
+  userId: user.id,
+  requestedSessionId: sessionId,
+  activeSessionId: activeSession?.id ?? null,
+  activeSessionStatus: activeSession?.status ?? null,
+   });
 
-    const longitude =
-      body.longitude === undefined || body.longitude === null
-        ? null
-        : Number(body.longitude);
+    if (!activeSession || activeSession.id !== sessionId) {
+      return NextResponse.json(
+        { error: "Active Guardian session not found." },
+        { status: 404 }
+      );
+    }
 
-    const accuracy =
-      body.accuracy === undefined || body.accuracy === null
-        ? null
-        : Number(body.accuracy);
+    const session = await GuardianSessionService.update(
+      sessionId,
+      {
+        latitude:
+          body.latitude === undefined || body.latitude === null
+            ? null
+            : Number(body.latitude),
+        longitude:
+          body.longitude === undefined || body.longitude === null
+            ? null
+            : Number(body.longitude),
+        accuracy:
+          body.accuracy === undefined || body.accuracy === null
+            ? null
+            : Number(body.accuracy),
+        batteryLevel:
+          body.batteryLevel === undefined ||
+          body.batteryLevel === null
+            ? null
+            : Number(body.batteryLevel),
+        networkStatus:
+          typeof body.networkStatus === "string"
+            ? body.networkStatus
+            : null,
+        message:
+          typeof body.message === "string" && body.message.trim()
+            ? body.message.trim()
+            : "Guardian location updated.",
+      }
+    );
 
-    const batteryLevel =
-      body.batteryLevel === undefined || body.batteryLevel === null
-        ? null
-        : Number(body.batteryLevel);
-
-    const networkStatus = String(body.networkStatus || "UNKNOWN");
-
-    const session = await prisma.guardianSession.update({
-      where: {
-        id: sessionId,
-        userId: user.id,
-      },
-      data: {
-        latitude,
-        longitude,
-        batteryLevel,
-        networkStatus,
-        locations:
-          latitude !== null && longitude !== null
-            ? {
-                create: {
-                  latitude,
-                  longitude,
-                  accuracy,
-                },
-              }
-            : undefined,
-        timeline: {
-          create: {
-            message,
-            latitude,
-            longitude,
-          },
-        },
-      },
-      include: {
-        locations: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-        timeline: {
-          orderBy: { createdAt: "desc" },
-          take: 20,
-        },
-      },
+    return NextResponse.json({
+      success: true,
+      session,
     });
-
-    return NextResponse.json({ session });
   } catch (error) {
     console.error("Guardian update error:", error);
+
+    if (error instanceof GuardianSessionError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
 
     return NextResponse.json(
       { error: "Failed to update Guardian session." },

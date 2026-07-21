@@ -1,20 +1,15 @@
 import { NextResponse } from "next/server";
 import {
-  LocationService,
-  LocationServiceError,
-} from "@/lib/services/LocationService";
+  IncidentService,
+  IncidentServiceError,
+} from "@/lib/services/IncidentService";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
 
-    const latitude = Number(
-      searchParams.get("lat")
-    );
-
-    const longitude = Number(
-      searchParams.get("lng")
-    );
+    const latitude = Number(searchParams.get("lat"));
+    const longitude = Number(searchParams.get("lng"));
 
     const requestedRadius = Number(
       searchParams.get("radius") || 5000
@@ -25,33 +20,28 @@ export async function GET(request: Request) {
       Math.max(100, requestedRadius)
     );
 
-    const incidents =
-      await LocationService.getNearbyIncidents(
-        latitude,
-        longitude,
-        radius
-      );
+    const incidents = await IncidentService.getNearby(
+      latitude,
+      longitude,
+      radius
+    );
 
     const nearby = incidents.map((incident) => ({
       id: incident.id,
       title: incident.title,
       type: incident.type,
       status: incident.status,
-      confidenceScore:
-        incident.confidenceScore,
+      confidenceScore: incident.confidenceScore,
       area: incident.area,
-      localGovernment:
-        incident.localGovernment,
+      localGovernment: incident.localGovernment,
       latitude: incident.latitude,
       longitude: incident.longitude,
       distance: incident.distance,
-      evidenceCount:
-        incident.evidence.length,
-      witnessCount:
-        incident.confirmations.filter(
-          (confirmation) =>
-            confirmation.vote === "CONFIRM"
-        ).length,
+      evidenceCount: incident.evidence.length,
+      witnessCount: incident.confirmations.filter(
+        (confirmation) =>
+          confirmation.vote === "CONFIRM"
+      ).length,
     }));
 
     return NextResponse.json({
@@ -60,29 +50,18 @@ export async function GET(request: Request) {
       closest: nearby[0] || null,
     });
   } catch (error) {
-    console.error(
-      "Nearby danger GET error:",
-      error
-    );
+    console.error("Nearby danger GET error:", error);
 
-    if (error instanceof LocationServiceError) {
+    if (error instanceof IncidentServiceError) {
       return NextResponse.json(
-        {
-          error: error.message,
-        },
-        {
-          status: error.status,
-        }
+        { error: error.message },
+        { status: error.status }
       );
     }
 
     return NextResponse.json(
-      {
-        error: "Unable to check nearby danger.",
-      },
-      {
-        status: 500,
-      }
+      { error: "Unable to check nearby danger." },
+      { status: 500 }
     );
   }
 }

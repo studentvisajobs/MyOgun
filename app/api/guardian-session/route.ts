@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  GuardianSessionError,
+  GuardianSessionService,
+} from "@/lib/services/GuardianSessionService";
+
+function toOptionalNumber(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const numberValue = Number(value);
+
+  return Number.isFinite(numberValue)
+    ? numberValue
+    : null;
+}
 
 export async function POST(req: Request) {
   try {
@@ -15,43 +30,30 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    const latitude =
-      body.latitude === undefined || body.latitude === null
-        ? null
-        : Number(body.latitude);
-
-    const longitude =
-      body.longitude === undefined || body.longitude === null
-        ? null
-        : Number(body.longitude);
-
-    const alert = await prisma.sOSAlert.create({
-      data: {
-        userId: user.id,
-        latitude,
-        longitude,
-        message: "Guardian Mode activated",
-        status: "ACTIVE",
-        timeline: {
-          create: {
-            message: "Guardian session created.",
-            latitude,
-            longitude,
-          },
-        },
-      },
-      include: {
-        timeline: {
-          orderBy: {
-            createdAt: "desc",
-          },
-        },
-      },
+    const session = await GuardianSessionService.start({
+      userId: user.id,
+      latitude: toOptionalNumber(body.latitude),
+      longitude: toOptionalNumber(body.longitude),
+      batteryLevel: toOptionalNumber(body.batteryLevel),
+      networkStatus:
+        typeof body.networkStatus === "string"
+          ? body.networkStatus
+          : null,
     });
 
-    return NextResponse.json({ alert });
+    return NextResponse.json({
+      alert: session,
+      session,
+    });
   } catch (error) {
     console.error("Guardian session POST error:", error);
+
+    if (error instanceof GuardianSessionError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
 
     return NextResponse.json(
       { error: "Failed to create Guardian session." },
@@ -73,54 +75,62 @@ export async function PATCH(req: Request) {
 
     const body = await req.json();
 
-    const alertId = String(body.alertId || "");
-    const message = String(body.message || "Location updated.");
+    const sessionId =
+      typeof body.sessionId === "string" && body.sessionId.trim()
+        ? body.sessionId.trim()
+        : typeof body.alertId === "string"
+          ? body.alertId.trim()
+          : "";
 
-    if (!alertId) {
+    if (!sessionId) {
       return NextResponse.json(
-        { error: "Alert ID is required." },
+        { error: "Session ID is required." },
         { status: 400 }
       );
     }
 
-    const latitude =
-      body.latitude === undefined || body.latitude === null
-        ? null
-        : Number(body.latitude);
+    const activeSession =
+      await GuardianSessionService.getActive(user.id);
 
-    const longitude =
-      body.longitude === undefined || body.longitude === null
-        ? null
-        : Number(body.longitude);
+    if (!activeSession || activeSession.id !== sessionId) {
+      return NextResponse.json(
+        { error: "Active Guardian session not found." },
+        { status: 404 }
+      );
+    }
 
-    const alert = await prisma.sOSAlert.update({
-      where: {
-        id: alertId,
-        userId: user.id,
-      },
-      data: {
-        latitude,
-        longitude,
-        timeline: {
-          create: {
-            message,
-            latitude,
-            longitude,
-          },
-        },
-      },
-      include: {
-        timeline: {
-          orderBy: {
-            createdAt: "desc",
-          },
-        },
-      },
+    const session = await GuardianSessionService.update(
+      sessionId,
+      {
+        latitude: toOptionalNumber(body.latitude),
+        longitude: toOptionalNumber(body.longitude),
+        accuracy: toOptionalNumber(body.accuracy),
+        batteryLevel: toOptionalNumber(body.batteryLevel),
+        networkStatus:
+          typeof body.networkStatus === "string"
+            ? body.networkStatus
+            : null,
+        message:
+          typeof body.message === "string" &&
+          body.message.trim()
+            ? body.message.trim()
+            : "Location updated.",
+      }
+    );
+
+    return NextResponse.json({
+      alert: session,
+      session,
     });
-
-    return NextResponse.json({ alert });
   } catch (error) {
     console.error("Guardian session PATCH error:", error);
+
+    if (error instanceof GuardianSessionError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
 
     return NextResponse.json(
       { error: "Failed to update Guardian session." },
@@ -142,40 +152,46 @@ export async function DELETE(req: Request) {
 
     const body = await req.json();
 
-    const alertId = String(body.alertId || "");
+    const sessionId =
+      typeof body.sessionId === "string" && body.sessionId.trim()
+        ? body.sessionId.trim()
+        : typeof body.alertId === "string"
+          ? body.alertId.trim()
+          : "";
 
-    if (!alertId) {
+    if (!sessionId) {
       return NextResponse.json(
-        { error: "Alert ID is required." },
+        { error: "Session ID is required." },
         { status: 400 }
       );
     }
 
-    const alert = await prisma.sOSAlert.update({
-      where: {
-        id: alertId,
-        userId: user.id,
-      },
-      data: {
-        status: "RESOLVED",
-        timeline: {
-          create: {
-            message: "Guardian session stopped safely.",
-          },
-        },
-      },
-      include: {
-        timeline: {
-          orderBy: {
-            createdAt: "desc",
-          },
-        },
-      },
-    });
+    const activeSession =
+      await GuardianSessionService.getActive(user.id);
 
-    return NextResponse.json({ alert });
+    if (!activeSession || activeSession.id !== sessionId) {
+      return NextResponse.json(
+        { error: "Active Guardian session not found." },
+        { status: 404 }
+      );
+    }
+
+    const session =
+      await GuardianSessionService.stop(sessionId);
+
+    return NextResponse.json({
+      alert: session,
+      session,
+    });
   } catch (error) {
     console.error("Guardian session DELETE error:", error);
+
+    if (error instanceof GuardianSessionError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
 
     return NextResponse.json(
       { error: "Failed to stop Guardian session." },

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { CommunityVerification } from "@/lib/community/CommunityVerification";
+import {
+  IncidentService,
+  IncidentServiceError,
+} from "@/lib/services/IncidentService";
 
 export async function POST(req: Request) {
   try {
@@ -16,80 +18,60 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    const incidentId = String(body.incidentId || "");
-    const vote = body.vote as "CONFIRM" | "FALSE_REPORT";
-    const comment = String(body.comment || "").trim();
+    const incidentId =
+      typeof body.incidentId === "string"
+        ? body.incidentId
+        : "";
 
-    if (!incidentId) {
-      return NextResponse.json(
-        { error: "Incident ID is required." },
-        { status: 400 }
-      );
-    }
+    const vote =
+      typeof body.vote === "string"
+        ? body.vote
+        : "";
 
-    if (!["CONFIRM", "FALSE_REPORT"].includes(vote)) {
+    const comment =
+      typeof body.comment === "string"
+        ? body.comment
+        : null;
+
+    if (
+      vote !== "CONFIRM" &&
+      vote !== "FALSE_REPORT"
+    ) {
       return NextResponse.json(
         { error: "Invalid vote." },
         { status: 400 }
       );
     }
 
-    // Look for an existing vote from this user
-    const existingVote = await prisma.confirmation.findFirst({
-      where: {
-        incidentId,
-        userId: user.id,
-      },
-    });
-
-    if (existingVote) {
-      // Update existing vote
-      await prisma.confirmation.update({
-        where: {
-          id: existingVote.id,
-        },
-        data: {
-          vote,
-          comment: comment || null,
-        },
-      });
-    } else {
-      // Create new vote
-      await prisma.confirmation.create({
-        data: {
-          incidentId,
-          userId: user.id,
-          vote,
-          comment: comment || null,
-        },
-      });
-    }
-
-    // Recalculate confidence score
-    const incident = await CommunityVerification.recalculate(incidentId);
-
-    const confirmations = await prisma.confirmation.findMany({
-      where: {
-        incidentId,
-      },
-    });
-
-    const confirmCount = confirmations.filter(
-      (item) => item.vote === "CONFIRM"
-    ).length;
-
-    const falseReportCount = confirmations.filter(
-      (item) => item.vote === "FALSE_REPORT"
-    ).length;
+    const result = await IncidentService.confirm(
+      incidentId,
+      user.id,
+      vote,
+      comment
+    );
 
     return NextResponse.json({
       success: true,
-      incident,
-      confirmCount,
-      falseReportCount,
+      incident: result.incident,
+      confirmCount: result.confirmCount,
+      falseReportCount: result.falseReportCount,
     });
   } catch (error) {
-    console.error("Confirm incident error:", error);
+    console.error(
+      "Confirm incident error:",
+      error
+    );
+
+    if (error instanceof IncidentServiceError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+        },
+        {
+          status: error.status,
+        }
+      );
+    }
 
     return NextResponse.json(
       {

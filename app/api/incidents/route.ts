@@ -1,19 +1,41 @@
 export const runtime = "nodejs";
 
-import { prisma } from "@/lib/prisma";
-import { detectArea } from "@/lib/ogunAreas";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  IncidentService,
+  IncidentServiceError,
+} from "@/lib/services/IncidentService";
 
 function toNumber(value: unknown) {
-  if (value === undefined || value === null || value === "") return 0;
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return Number.NaN;
+  }
+
   return Number(value);
+}
+
+function toBoolean(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return value.toLowerCase() === "true";
+  }
+
+  return Boolean(value);
 }
 
 export async function POST(request: Request) {
   try {
-    const contentType = request.headers.get("content-type") || "";
+    const contentType =
+      request.headers.get("content-type") || "";
 
-    let body: any = {};
+    let body: Record<string, unknown>;
 
     if (contentType.includes("application/json")) {
       body = await request.json();
@@ -36,93 +58,101 @@ export async function POST(request: Request) {
 
     const currentUser = await getCurrentUser();
 
-    const userId = body.userId || currentUser?.id || null;
-    const title = String(body.title || "").trim();
-    const description = String(body.description || "").trim();
-    const type = String(body.type || "OTHER").trim();
+    const incident = await IncidentService.create({
+      userId:
+        (typeof body.userId === "string"
+          ? body.userId
+          : null) ||
+        currentUser?.id ||
+        null,
 
-    const latitude = toNumber(body.latitude);
-    const longitude = toNumber(body.longitude);
+      title:
+        typeof body.title === "string"
+          ? body.title
+          : "",
 
-    const isCritical = Boolean(body.isCritical);
-    const isAnonymous = Boolean(body.isAnonymous);
+      description:
+        typeof body.description === "string"
+          ? body.description
+          : null,
 
-    if (!title || !type) {
+      type:
+        typeof body.type === "string"
+          ? body.type
+          : "OTHER",
+
+      latitude: toNumber(body.latitude),
+
+      longitude: toNumber(body.longitude),
+
+      area:
+        typeof body.area === "string"
+          ? body.area
+          : null,
+
+      localGovernment:
+        typeof body.localGovernment === "string"
+          ? body.localGovernment
+          : null,
+
+      isCritical: toBoolean(body.isCritical),
+
+      isAnonymous: toBoolean(body.isAnonymous),
+    });
+
+    return Response.json(
+      {
+        success: true,
+        incident,
+      },
+      {
+        status: 201,
+      }
+    );
+  } catch (error) {
+    console.error("Incident POST error:", error);
+
+    if (error instanceof IncidentServiceError) {
       return Response.json(
-        { error: "Title and type are required." },
-        { status: 400 }
+        {
+          error: error.message,
+        },
+        {
+          status: error.status,
+        }
       );
     }
 
-    let validUserId: string | undefined = undefined;
-
-    if (userId) {
-      const user = await prisma.user.findUnique({
-        where: { id: String(userId) },
-      });
-
-      if (user) {
-        validUserId = user.id;
-      }
-    }
-
-    const areaInfo =
-      latitude && longitude
-        ? detectArea(latitude, longitude)
-        : {
-            area: body.area || null,
-            localGovernment: body.localGovernment || null,
-          };
-
-    const incident = await prisma.incident.create({
-      data: {
-        userId: isAnonymous ? undefined : validUserId,
-        title,
-        description: description || null,
-        type: type as any,
-        latitude,
-        longitude,
-        area: body.area || areaInfo.area || null,
-        localGovernment: body.localGovernment || areaInfo.localGovernment || null,
-        confidenceScore: isCritical ? 70 : 20,
-        status: isCritical ? "CRITICAL" : "PENDING",
-        isAnonymous,
-      },
-      include: {
-        evidence: true,
-        confirmations: true,
-        user: true,
-      },
-    });
-
-    return Response.json({
-      success: true,
-      incident,
-    });
-  } catch (error) {
-    console.error("Incident error:", error);
-
     return Response.json(
-      { error: "Failed to create incident" },
-      { status: 500 }
+      {
+        error: "Failed to create incident.",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }
 
 export async function GET() {
-  const incidents = await prisma.incident.findMany({
-    include: {
-      evidence: true,
-      confirmations: true,
-      user: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+  try {
+    const incidents =
+      await IncidentService.getAll();
 
-  return Response.json({
-    success: true,
-    incidents,
-  });
+    return Response.json({
+      success: true,
+      incidents,
+    });
+  } catch (error) {
+    console.error("Incident GET error:", error);
+
+    return Response.json(
+      {
+        error: "Failed to load incidents.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
 }

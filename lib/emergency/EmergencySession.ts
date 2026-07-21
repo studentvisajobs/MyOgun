@@ -1,15 +1,33 @@
-import type { EmergencyLocation, EmergencyMode } from "./EmergencyTypes";
+import type {
+  EmergencyLocation,
+  EmergencyMode,
+} from "./EmergencyTypes";
 
 export type EmergencySessionResponse = {
+  success: boolean;
   session: {
     id: string;
     status: string;
     latitude: number | null;
     longitude: number | null;
-    battery: number | null;
-    network: string | null;
+    batteryLevel: number | null;
+    networkStatus: string | null;
+    startedAt?: string;
+    updatedAt?: string;
   };
 };
+
+async function readJsonResponse(response: Response) {
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data.error || "Emergency request failed."
+    );
+  }
+
+  return data;
+}
 
 export async function startEmergencySession(
   mode: EmergencyMode,
@@ -17,25 +35,23 @@ export async function startEmergencySession(
   batteryLevel?: number | null,
   networkStatus?: string
 ) {
-  const res = await fetch("/api/guardian/start", {
+  const response = await fetch("/api/guardian/start", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       mode,
       latitude: location?.latitude ?? null,
       longitude: location?.longitude ?? null,
-      battery: batteryLevel ?? null,
-      network: networkStatus || "UNKNOWN",
+      batteryLevel: batteryLevel ?? null,
+      networkStatus: networkStatus || "UNKNOWN",
     }),
   });
 
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error(data.error || "Failed to start emergency session.");
-  }
-
-  return data as EmergencySessionResponse;
+  return (await readJsonResponse(
+    response
+  )) as EmergencySessionResponse;
 }
 
 export async function updateEmergencySession(
@@ -45,37 +61,58 @@ export async function updateEmergencySession(
   batteryLevel?: number | null,
   networkStatus?: string
 ) {
-  const res = await fetch("/api/guardian/update-location", {
+  const response = await fetch("/api/guardian/update", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       sessionId,
+      message,
       latitude: location?.latitude ?? null,
       longitude: location?.longitude ?? null,
+      accuracy: location?.accuracy ?? null,
+      batteryLevel: batteryLevel ?? null,
+      networkStatus: networkStatus || "UNKNOWN",
     }),
   });
 
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error(data.error || "Failed to update emergency session.");
-  }
-
-  return data as EmergencySessionResponse;
+  return (await readJsonResponse(
+    response
+  )) as EmergencySessionResponse;
 }
 
-export async function stopEmergencySession(sessionId: string) {
-  const res = await fetch("/api/guardian/stop", {
+export async function stopEmergencySession(
+  sessionId: string
+) {
+  const response = await fetch("/api/guardian/stop", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sessionId,
+    }),
   });
 
-  const data = await res.json();
+  return (await readJsonResponse(
+    response
+  )) as EmergencySessionResponse;
+}
 
-  if (!res.ok) {
-    throw new Error(data.error || "Failed to stop emergency session.");
-  }
+export async function getActiveEmergencySession() {
+  const response = await fetch(
+    "/api/guardian/active",
+    {
+      method: "GET",
+      cache: "no-store",
+    }
+  );
 
-  return data as EmergencySessionResponse;
+  return (await readJsonResponse(
+    response
+  )) as {
+    success: boolean;
+    session: EmergencySessionResponse["session"] | null;
+  };
 }
