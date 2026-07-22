@@ -498,6 +498,69 @@ export default function JourneyClient() {
     }
   }
 
+async function extendJourney(
+  minutes: 15 | 30 | 60
+) {
+  if (!journeyId) {
+    return;
+  }
+
+  try {
+    setSubmitting(true);
+    setMessage("");
+
+    const response = await fetch(
+      "/api/journey/extend",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          journeyId,
+          minutes,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+          "Unable to extend journey."
+      );
+    }
+
+    setStatus(
+      data.journey.status
+    );
+
+    setTimeline(
+      data.journey.timeline || []
+    );
+
+    setEstimatedArrival(
+      formatDateTimeLocal(
+        data.journey.estimatedArrival
+      )
+    );
+
+    setMessage(
+      `Journey extended by ${minutes} minutes.`
+    );
+  } catch (error) {
+    setMessage(
+      error instanceof Error
+        ? error.message
+        : "Unable to extend journey."
+    );
+  } finally {
+    setSubmitting(false);
+  }
+}
+
   return (
     <>
       <section className="rounded-[2rem] border border-white/10 bg-[#111] p-6">
@@ -619,13 +682,41 @@ export default function JourneyClient() {
           : "Yes, I've Arrived"}
       </button>
 
-      <button
-        type="button"
-        disabled
-        className="w-full cursor-not-allowed rounded-full bg-yellow-500 py-4 font-black text-black opacity-50"
-      >
-        Need More Time — Coming Next
-      </button>
+<div className="grid grid-cols-3 gap-2">
+  <button
+    type="button"
+    onClick={() =>
+      void extendJourney(15)
+    }
+    disabled={submitting}
+    className="rounded-full bg-yellow-500 py-3 text-sm font-black text-black"
+  >
+    +15 min
+  </button>
+
+  <button
+    type="button"
+    onClick={() =>
+      void extendJourney(30)
+    }
+    disabled={submitting}
+    className="rounded-full bg-yellow-500 py-3 text-sm font-black text-black"
+  >
+    +30 min
+  </button>
+
+  <button
+    type="button"
+    onClick={() =>
+      void extendJourney(60)
+    }
+    disabled={submitting}
+    className="rounded-full bg-yellow-500 py-3 text-sm font-black text-black"
+  >
+    +60 min
+  </button>
+</div>
+
     </div>
   </div>
 ) : (
