@@ -462,4 +462,23 @@ export class GuardianSessionService {
       },
     });
   }
+  static async getTimeline(sessionId: string) {
+  const cleanSessionId = sessionId.trim();
+
+  if (!cleanSessionId) {
+    throw new GuardianSessionError(
+      "Session ID is required.",
+      400
+    );
+  }
+
+  return prisma.guardianSessionTimeline.findMany({
+    where: {
+      sessionId: cleanSessionId,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+}
 }

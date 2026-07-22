@@ -161,6 +161,47 @@ export default function SilentSOSClient() {
     return () => clearInterval(interval);
   }, [sessionId]);
 
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
+    const loadTimeline = async () => {
+      try {
+        const res = await fetch(
+          `/api/guardian/timeline?sessionId=${sessionId}`
+        );
+
+        if (!res.ok) {
+          return;
+        }
+
+        const data = await res.json();
+
+        setTimeline(
+          data.timeline.map(
+            (item: {
+              createdAt: string;
+              message: string;
+            }) => ({
+              time: new Date(
+                item.createdAt
+              ).toLocaleTimeString(),
+              message: item.message,
+            })
+          )
+        );
+      } catch (error) {
+        console.error(
+          "Timeline restore error:",
+          error
+        );
+      }
+    };
+
+    void loadTimeline();
+  }, [sessionId]);
+
   function formatTime(sec: number) {
     const mins = Math.floor(sec / 60);
     const secs = sec % 60;
