@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -10,6 +11,14 @@ type TimelineItem = {
   id?: string;
   message: string;
   createdAt: string;
+};
+
+type ActiveJourney = {
+  id: string;
+  destination: string;
+  estimatedArrival: string | null;
+  status: string;
+  timeline?: TimelineItem[];
 };
 
 type BatteryManager = {
@@ -24,6 +33,26 @@ type NavigatorWithConnection = Navigator & {
   };
 };
 
+function formatDateTimeLocal(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const offset = date.getTimezoneOffset();
+
+  return new Date(
+    date.getTime() - offset * 60_000
+  )
+    .toISOString()
+    .slice(0, 16);
+}
+
 export default function JourneyClient() {
   const [destination, setDestination] = useState("");
   const [estimatedArrival, setEstimatedArrival] =
@@ -31,28 +60,19 @@ export default function JourneyClient() {
 
   const [active, setActive] = useState(false);
   const [journeyId, setJourneyId] = useState("");
-  const [timeline, setTimeline] = useState<TimelineItem[]>(
-    []
-  );
+  const [timeline, setTimeline] = useState<
+    TimelineItem[]
+  >([]);
 
   const [status, setStatus] = useState("READY");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [restoring, setRestoring] = useState(true);
 
   const watchRef = useRef<number | null>(null);
   const lastUploadRef = useRef(0);
 
-  useEffect(() => {
-    return () => {
-      if (watchRef.current !== null) {
-        navigator.geolocation.clearWatch(
-          watchRef.current
-        );
-      }
-    };
-  }, []);
-
-  async function getDeviceStatus() {
+  const getDeviceStatus = useCallback(async () => {
     const extendedNavigator =
       navigator as NavigatorWithConnection;
 
@@ -63,7 +83,9 @@ export default function JourneyClient() {
         const battery =
           await extendedNavigator.getBattery();
 
-        batteryLevel = Math.round(battery.level * 100);
+        batteryLevel = Math.round(
+          battery.level * 100
+        );
       } catch {
         batteryLevel = null;
       }
@@ -78,97 +100,185 @@ export default function JourneyClient() {
       batteryLevel,
       networkStatus,
     };
-  }
+  }, []);
 
-  function beginLocationTracking(id: string) {
-    if (!navigator.geolocation) {
-      setMessage(
-        "GPS is not available on this device."
-      );
-      return;
-    }
+  const beginLocationTracking = useCallback(
+    (id: string) => {
+      if (!navigator.geolocation) {
+        setMessage(
+          "GPS is not available on this device."
+        );
+        return;
+      }
 
-    if (watchRef.current !== null) {
-      navigator.geolocation.clearWatch(
-        watchRef.current
-      );
-    }
+      if (watchRef.current !== null) {
+        navigator.geolocation.clearWatch(
+          watchRef.current
+        );
+      }
 
-    watchRef.current =
-      navigator.geolocation.watchPosition(
-        async (position) => {
-          const now = Date.now();
+      lastUploadRef.current = 0;
 
-          if (now - lastUploadRef.current < 10000) {
-            return;
-          }
+      watchRef.current =
+        navigator.geolocation.watchPosition(
+          async (position) => {
+            const now = Date.now();
 
-          lastUploadRef.current = now;
-
-          try {
-            const deviceStatus =
-              await getDeviceStatus();
-
-            const response = await fetch(
-              "/api/journey/update",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  journeyId: id,
-                  latitude:
-                    position.coords.latitude,
-                  longitude:
-                    position.coords.longitude,
-                  accuracy:
-                    position.coords.accuracy,
-                  batteryLevel:
-                    deviceStatus.batteryLevel,
-                  networkStatus:
-                    deviceStatus.networkStatus,
-                }),
-              }
-            );
-
-            const data = await response.json();
-
-            if (!response.ok) {
-              setMessage(
-                data.error ||
-                  "Unable to update journey location."
-              );
+            if (
+              now - lastUploadRef.current <
+              10000
+            ) {
               return;
             }
 
+            lastUploadRef.current = now;
+
+            try {
+              const deviceStatus =
+                await getDeviceStatus();
+
+              const response = await fetch(
+                "/api/journey/update",
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type":
+                      "application/json",
+                  },
+                  body: JSON.stringify({
+                    journeyId: id,
+                    latitude:
+                      position.coords.latitude,
+                    longitude:
+                      position.coords.longitude,
+                    accuracy:
+                      position.coords.accuracy,
+                    batteryLevel:
+                      deviceStatus.batteryLevel,
+                    networkStatus:
+                      deviceStatus.networkStatus,
+                  }),
+                }
+              );
+
+              const data = await response.json();
+
+              if (!response.ok) {
+                setMessage(
+                  data.error ||
+                    "Unable to update journey location."
+                );
+                return;
+              }
+
+              setMessage(
+                "Journey location updated for your guardians."
+              );
+            } catch {
+              setMessage(
+                "Unable to update your live journey location."
+              );
+            }
+          },
+          () => {
             setMessage(
-              "Journey location updated for your guardians."
+              "Location permission is required for live journey monitoring."
             );
-          } catch {
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 10000,
+            timeout: 15000,
+          }
+        );
+    },
+    [getDeviceStatus]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreActiveJourney() {
+      try {
+        const response = await fetch(
+          "/api/journey/active",
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          if (response.status !== 401) {
             setMessage(
-              "Unable to update your live journey location."
+              data.error ||
+                "Unable to restore your active journey."
             );
           }
-        },
-        () => {
-          setMessage(
-            "Location permission is required for live journey monitoring."
-          );
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 10000,
-          timeout: 15000,
+
+          return;
         }
-      );
-  }
+
+        const journey =
+          data.journey as ActiveJourney | null;
+
+        if (!journey || cancelled) {
+          return;
+        }
+
+        setJourneyId(journey.id);
+        setDestination(journey.destination);
+        setEstimatedArrival(
+          formatDateTimeLocal(
+            journey.estimatedArrival
+          )
+        );
+        setStatus(journey.status);
+        setTimeline(journey.timeline || []);
+        setActive(true);
+
+        beginLocationTracking(journey.id);
+
+        setMessage(
+          "Your active Safe Journey has been restored. Live monitoring has resumed."
+        );
+      } catch {
+        if (!cancelled) {
+          setMessage(
+            "Unable to restore your active journey."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setRestoring(false);
+        }
+      }
+    }
+
+    void restoreActiveJourney();
+
+    return () => {
+      cancelled = true;
+
+      if (watchRef.current !== null) {
+        navigator.geolocation.clearWatch(
+          watchRef.current
+        );
+
+        watchRef.current = null;
+      }
+    };
+  }, [beginLocationTracking]);
 
   async function startJourney() {
     const cleanDestination = destination.trim();
 
     if (!cleanDestination) {
-      setMessage("Please enter your destination.");
+      setMessage(
+        "Please enter your destination."
+      );
       return;
     }
 
@@ -195,7 +305,8 @@ export default function JourneyClient() {
               {
                 method: "POST",
                 headers: {
-                  "Content-Type": "application/json",
+                  "Content-Type":
+                    "application/json",
                 },
                 body: JSON.stringify({
                   destination: cleanDestination,
@@ -224,11 +335,14 @@ export default function JourneyClient() {
               );
             }
 
-            const id = data.journey.id as string;
+            const id =
+              data.journey.id as string;
 
             setJourneyId(id);
             setActive(true);
-            setStatus("ACTIVE");
+            setStatus(
+              data.journey.status || "ACTIVE"
+            );
             setTimeline(
               data.journey.timeline || []
             );
@@ -266,12 +380,16 @@ export default function JourneyClient() {
     } catch {
       setStatus("READY");
       setSubmitting(false);
-      setMessage("Unable to start journey.");
+      setMessage(
+        "Unable to start journey."
+      );
     }
   }
 
   async function checkIn() {
-    if (!journeyId) return;
+    if (!journeyId) {
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -282,7 +400,8 @@ export default function JourneyClient() {
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
           body: JSON.stringify({
             journeyId,
@@ -294,12 +413,17 @@ export default function JourneyClient() {
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Unable to check in."
+          data.error ||
+            "Unable to check in."
         );
       }
 
-      setStatus("CHECKED_IN");
-      setTimeline(data.journey.timeline || []);
+      setStatus(
+        data.journey.status || "CHECKED_IN"
+      );
+      setTimeline(
+        data.journey.timeline || []
+      );
       setMessage(
         "Check-in recorded. Your guardians can see that you are safe."
       );
@@ -315,26 +439,21 @@ export default function JourneyClient() {
   }
 
   async function stopJourney() {
-    if (!journeyId) return;
+    if (!journeyId) {
+      return;
+    }
 
     try {
       setSubmitting(true);
       setMessage("");
-
-      if (watchRef.current !== null) {
-        navigator.geolocation.clearWatch(
-          watchRef.current
-        );
-
-        watchRef.current = null;
-      }
 
       const response = await fetch(
         "/api/journey/stop",
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
           body: JSON.stringify({
             journeyId,
@@ -346,11 +465,22 @@ export default function JourneyClient() {
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Unable to end journey."
+          data.error ||
+            "Unable to end journey."
         );
       }
 
-      setTimeline(data.journey.timeline || []);
+      if (watchRef.current !== null) {
+        navigator.geolocation.clearWatch(
+          watchRef.current
+        );
+
+        watchRef.current = null;
+      }
+
+      setTimeline(
+        data.journey.timeline || []
+      );
       setActive(false);
       setJourneyId("");
       setStatus("COMPLETED");
@@ -383,9 +513,15 @@ export default function JourneyClient() {
             id="journey-destination"
             value={destination}
             onChange={(event) =>
-              setDestination(event.target.value)
+              setDestination(
+                event.target.value
+              )
             }
-            disabled={active || submitting}
+            disabled={
+              active ||
+              submitting ||
+              restoring
+            }
             placeholder="Where are you going?"
             className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-white outline-none transition focus:border-emerald-500 disabled:opacity-50"
           />
@@ -407,9 +543,15 @@ export default function JourneyClient() {
             type="datetime-local"
             value={estimatedArrival}
             onChange={(event) =>
-              setEstimatedArrival(event.target.value)
+              setEstimatedArrival(
+                event.target.value
+              )
             }
-            disabled={active || submitting}
+            disabled={
+              active ||
+              submitting ||
+              restoring
+            }
             className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-white outline-none transition focus:border-emerald-500 disabled:opacity-50"
           />
         </div>
@@ -420,7 +562,12 @@ export default function JourneyClient() {
           </p>
 
           <p className="mt-2 text-2xl font-black text-emerald-400">
-            {status.replaceAll("_", " ")}
+            {restoring
+              ? "RESTORING"
+              : status.replaceAll(
+                  "_",
+                  " "
+                )}
           </p>
         </div>
 
@@ -433,19 +580,27 @@ export default function JourneyClient() {
         {!active ? (
           <button
             type="button"
-            onClick={() => void startJourney()}
-            disabled={submitting}
+            onClick={() =>
+              void startJourney()
+            }
+            disabled={
+              submitting || restoring
+            }
             className="mt-6 w-full rounded-full bg-emerald-500 py-4 font-black text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting
-              ? "Starting Journey..."
-              : "Start Journey"}
+            {restoring
+              ? "Checking Active Journey..."
+              : submitting
+                ? "Starting Journey..."
+                : "Start Journey"}
           </button>
         ) : (
           <div className="mt-6 grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => void checkIn()}
+              onClick={() =>
+                void checkIn()
+              }
               disabled={submitting}
               className="rounded-full bg-blue-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -454,7 +609,9 @@ export default function JourneyClient() {
 
             <button
               type="button"
-              onClick={() => void stopJourney()}
+              onClick={() =>
+                void stopJourney()
+              }
               disabled={submitting}
               className="rounded-full bg-red-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -472,27 +629,34 @@ export default function JourneyClient() {
         <div className="mt-5 space-y-4">
           {timeline.length === 0 ? (
             <p className="text-white/50">
-              No journey started yet. Start a journey
-              and MyOgun will monitor your safety until
-              you arrive.
+              No journey started yet. Start a
+              journey and MyOgun will monitor
+              your safety until you arrive.
             </p>
           ) : (
-            timeline.map((item, index) => (
-              <div
-                key={item.id || `${item.createdAt}-${index}`}
-                className="border-l border-emerald-500/40 pl-4"
-              >
-                <p className="text-sm text-white/70">
-                  {item.message}
-                </p>
+            timeline.map(
+              (item, index) => (
+                <div
+                  key={
+                    item.id ||
+                    `${item.createdAt}-${index}`
+                  }
+                  className="border-l border-emerald-500/40 pl-4"
+                >
+                  <p className="text-sm text-white/70">
+                    {item.message}
+                  </p>
 
-                <p className="mt-1 text-xs text-white/40">
-                  {new Date(
-                    item.createdAt
-                  ).toLocaleTimeString("en-GB")}
-                </p>
-              </div>
-            ))
+                  <p className="mt-1 text-xs text-white/40">
+                    {new Date(
+                      item.createdAt
+                    ).toLocaleTimeString(
+                      "en-GB"
+                    )}
+                  </p>
+                </div>
+              )
+            )
           )}
         </div>
       </section>

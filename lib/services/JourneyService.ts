@@ -35,7 +35,10 @@ export class JourneyServiceError extends Error {
   }
 }
 
-function validateCoordinates(latitude: number, longitude: number) {
+function validateCoordinates(
+  latitude: number,
+  longitude: number
+) {
   if (
     !Number.isFinite(latitude) ||
     !Number.isFinite(longitude)
@@ -61,7 +64,9 @@ function validateCoordinates(latitude: number, longitude: number) {
   }
 }
 
-function normalizeBatteryLevel(value?: number | null) {
+function normalizeBatteryLevel(
+  value?: number | null
+) {
   if (value === undefined || value === null) {
     return null;
   }
@@ -70,7 +75,10 @@ function normalizeBatteryLevel(value?: number | null) {
     return null;
   }
 
-  return Math.max(0, Math.min(100, Math.round(value)));
+  return Math.max(
+    0,
+    Math.min(100, Math.round(value))
+  );
 }
 
 function normalizeAccuracy(value?: number | null) {
@@ -81,7 +89,9 @@ function normalizeAccuracy(value?: number | null) {
   return Number.isFinite(value) ? value : null;
 }
 
-function normalizeNetworkStatus(value?: string | null) {
+function normalizeNetworkStatus(
+  value?: string | null
+) {
   if (!value?.trim()) {
     return "ONLINE";
   }
@@ -112,14 +122,21 @@ export class JourneyService {
         input.estimatedArrival
       );
 
-      if (Number.isNaN(estimatedArrival.getTime())) {
+      if (
+        Number.isNaN(
+          estimatedArrival.getTime()
+        )
+      ) {
         throw new JourneyServiceError(
           "Estimated arrival time is invalid.",
           400
         );
       }
 
-      if (estimatedArrival.getTime() <= Date.now()) {
+      if (
+        estimatedArrival.getTime() <=
+        Date.now()
+      ) {
         throw new JourneyServiceError(
           "Estimated arrival must be in the future.",
           400
@@ -132,7 +149,11 @@ export class JourneyService {
         where: {
           userId: input.userId,
           status: {
-            in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+            in: [
+              "ACTIVE",
+              "CHECKED_IN",
+              "OVERDUE",
+            ],
           },
         },
         select: {
@@ -151,41 +172,48 @@ export class JourneyService {
       input.accuracy
     );
 
-    const batteryLevel = normalizeBatteryLevel(
-      input.batteryLevel
-    );
+    const batteryLevel =
+      normalizeBatteryLevel(
+        input.batteryLevel
+      );
 
-    const networkStatus = normalizeNetworkStatus(
-      input.networkStatus
-    );
+    const networkStatus =
+      normalizeNetworkStatus(
+        input.networkStatus
+      );
 
     return prisma.$transaction(async (tx) => {
-      const journey = await tx.safeJourney.create({
-        data: {
-          userId: input.userId,
-          destination,
-          startAddress:
-            input.startAddress?.trim() || null,
-          estimatedArrival,
-          latitude: input.latitude,
-          longitude: input.longitude,
-          status: "ACTIVE",
-          timeline: {
-            create: {
-              message: "Safe Journey started.",
-              latitude: input.latitude,
-              longitude: input.longitude,
+      const journey =
+        await tx.safeJourney.create({
+          data: {
+            userId: input.userId,
+            destination,
+            startAddress:
+              input.startAddress?.trim() ||
+              null,
+            estimatedArrival,
+            latitude: input.latitude,
+            longitude: input.longitude,
+            status: "ACTIVE",
+            timeline: {
+              create: {
+                message:
+                  "Safe Journey started.",
+                latitude:
+                  input.latitude,
+                longitude:
+                  input.longitude,
+              },
             },
           },
-        },
-        include: {
-          timeline: {
-            orderBy: {
-              createdAt: "desc",
+          include: {
+            timeline: {
+              orderBy: {
+                createdAt: "desc",
+              },
             },
           },
-        },
-      });
+        });
 
       await tx.sharedLocation.upsert({
         where: {
@@ -212,7 +240,9 @@ export class JourneyService {
     });
   }
 
-  static async update(input: UpdateJourneyInput) {
+  static async update(
+    input: UpdateJourneyInput
+  ) {
     if (!input.journeyId.trim()) {
       throw new JourneyServiceError(
         "Journey ID is required.",
@@ -225,18 +255,23 @@ export class JourneyService {
       input.longitude
     );
 
-    const journey = await prisma.safeJourney.findFirst({
-      where: {
-        id: input.journeyId,
-        userId: input.userId,
-        status: {
-          in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+    const journey =
+      await prisma.safeJourney.findFirst({
+        where: {
+          id: input.journeyId,
+          userId: input.userId,
+          status: {
+            in: [
+              "ACTIVE",
+              "CHECKED_IN",
+              "OVERDUE",
+            ],
+          },
         },
-      },
-      select: {
-        id: true,
-      },
-    });
+        select: {
+          id: true,
+        },
+      });
 
     if (!journey) {
       throw new JourneyServiceError(
@@ -249,13 +284,15 @@ export class JourneyService {
       input.accuracy
     );
 
-    const batteryLevel = normalizeBatteryLevel(
-      input.batteryLevel
-    );
+    const batteryLevel =
+      normalizeBatteryLevel(
+        input.batteryLevel
+      );
 
-    const networkStatus = normalizeNetworkStatus(
-      input.networkStatus
-    );
+    const networkStatus =
+      normalizeNetworkStatus(
+        input.networkStatus
+      );
 
     return prisma.$transaction(async (tx) => {
       const updatedJourney =
@@ -301,14 +338,20 @@ export class JourneyService {
     });
   }
 
-  static async checkIn(input: JourneyActionInput) {
+  static async checkIn(
+    input: JourneyActionInput
+  ) {
     const journey =
       await prisma.safeJourney.findFirst({
         where: {
           id: input.journeyId,
           userId: input.userId,
           status: {
-            in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+            in: [
+              "ACTIVE",
+              "CHECKED_IN",
+              "OVERDUE",
+            ],
           },
         },
         select: {
@@ -331,7 +374,8 @@ export class JourneyService {
         status: "CHECKED_IN",
         timeline: {
           create: {
-            message: "User checked in safely.",
+            message:
+              "User checked in safely.",
           },
         },
       },
@@ -345,14 +389,20 @@ export class JourneyService {
     });
   }
 
-  static async stop(input: JourneyActionInput) {
+  static async stop(
+    input: JourneyActionInput
+  ) {
     const journey =
       await prisma.safeJourney.findFirst({
         where: {
           id: input.journeyId,
           userId: input.userId,
           status: {
-            in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+            in: [
+              "ACTIVE",
+              "CHECKED_IN",
+              "OVERDUE",
+            ],
           },
         },
         select: {
@@ -376,8 +426,31 @@ export class JourneyService {
         endedAt: new Date(),
         timeline: {
           create: {
-            message: "Safe Journey completed.",
+            message:
+              "Safe Journey completed.",
           },
+        },
+      },
+      include: {
+        timeline: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+    });
+  }
+
+  static async getActive(userId: string) {
+    return prisma.safeJourney.findFirst({
+      where: {
+        userId,
+        status: {
+          in: [
+            "ACTIVE",
+            "CHECKED_IN",
+            "OVERDUE",
+          ],
         },
       },
       include: {
