@@ -25,6 +25,10 @@ type JourneyActionInput = {
   journeyId: string;
 };
 
+type ExtendJourneyInput = JourneyActionInput & {
+  minutes: number;
+};
+
 export class JourneyServiceError extends Error {
   status: number;
 
@@ -390,6 +394,65 @@ export class JourneyService {
       },
     });
   }
+
+  static async extend(
+    input: ExtendJourneyInput
+  ) {
+    const allowedMinutes = [15, 30, 60];
+
+    if (!allowedMinutes.includes(input.minutes)) {
+      throw new JourneyServiceError(
+        "Extension must be 15, 30, or 60 minutes.",
+        400
+      );
+    }
+
+    const journey =
+      await prisma.safeJourney.findFirst({
+        where: {
+          id: input.journeyId,
+          userId: input.userId,
+          status: "OVERDUE",
+        },
+        select: {
+          id: true,
+        },
+      });
+
+    if (!journey) {
+      throw new JourneyServiceError(
+        "Overdue journey not found.",
+        404
+      );
+    }
+
+    const estimatedArrival = new Date(
+      Date.now() + input.minutes * 60_000
+    );
+
+    return prisma.safeJourney.update({
+      where: {
+        id: journey.id,
+      },
+      data: {
+        status: "ACTIVE",
+        estimatedArrival,
+        timeline: {
+          create: {
+            message: `Journey extended by ${input.minutes} minutes.`,
+          },
+        },
+      },
+      include: {
+        timeline: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+    });
+  }
+
     static async getActive(userId: string) {
     const journey =
       await prisma.safeJourney.findFirst({
