@@ -577,48 +577,83 @@ export default function JourneyClient() {
           </div>
         )}
 
-        {!active ? (
-          <button
-            type="button"
-            onClick={() =>
-              void startJourney()
-            }
-            disabled={
-              submitting || restoring
-            }
-            className="mt-6 w-full rounded-full bg-emerald-500 py-4 font-black text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {restoring
-              ? "Checking Active Journey..."
-              : submitting
-                ? "Starting Journey..."
-                : "Start Journey"}
-          </button>
-        ) : (
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() =>
-                void checkIn()
-              }
-              disabled={submitting}
-              className="rounded-full bg-blue-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              I&apos;m Safe
-            </button>
+{!active ? (
+  <button
+    type="button"
+    onClick={() =>
+      void startJourney()
+    }
+    disabled={
+      submitting || restoring
+    }
+    className="mt-6 w-full rounded-full bg-emerald-500 py-4 font-black text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    {restoring
+      ? "Checking Active Journey..."
+      : submitting
+        ? "Starting Journey..."
+        : "Start Journey"}
+  </button>
+) : status === "OVERDUE" ? (
+  <div className="mt-6 rounded-3xl border border-yellow-500/30 bg-yellow-500/10 p-6">
+    <h3 className="text-2xl font-black text-yellow-400">
+      Journey Overdue
+    </h3>
 
-            <button
-              type="button"
-              onClick={() =>
-                void stopJourney()
-              }
-              disabled={submitting}
-              className="rounded-full bg-red-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              End Journey
-            </button>
-          </div>
-        )}
+    <p className="mt-3 text-white/70">
+      Your estimated arrival time has passed.
+      Have you arrived safely?
+    </p>
+
+    <div className="mt-6 space-y-3">
+      <button
+        type="button"
+        onClick={() =>
+          void stopJourney()
+        }
+        disabled={submitting}
+        className="w-full rounded-full bg-emerald-500 py-4 font-black text-black disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {submitting
+          ? "Completing Journey..."
+          : "Yes, I've Arrived"}
+      </button>
+
+      <button
+        type="button"
+        disabled
+        className="w-full cursor-not-allowed rounded-full bg-yellow-500 py-4 font-black text-black opacity-50"
+      >
+        Need More Time — Coming Next
+      </button>
+    </div>
+  </div>
+) : (
+  <div className="mt-6 grid grid-cols-2 gap-3">
+    <button
+      type="button"
+      onClick={() =>
+        void checkIn()
+      }
+      disabled={submitting}
+      className="rounded-full bg-blue-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      I&apos;m Safe
+    </button>
+
+    <button
+      type="button"
+      onClick={() =>
+        void stopJourney()
+      }
+      disabled={submitting}
+      className="rounded-full bg-red-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      End Journey
+    </button>
+  </div>
+)}
+      
       </section>
 
       <section className="mt-8 rounded-[2rem] border border-white/10 bg-[#111] p-6">
