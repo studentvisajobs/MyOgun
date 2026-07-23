@@ -4,6 +4,7 @@ import {
   JourneyService,
   JourneyServiceError,
 } from "@/lib/services/JourneyService";
+import { NotificationService } from "@/lib/services/NotificationService";
 
 export async function POST(req: Request) {
   try {
@@ -51,6 +52,20 @@ export async function POST(req: Request) {
         journeyId,
         minutes,
       });
+
+    try {
+      await NotificationService.createGuardianNotification({
+        userId: user.id,
+        journeyId: journey.id,
+        title: "Journey Extended",
+        message: `Your Safe Journey has been extended by ${minutes} minutes.`,
+      });
+    } catch (notificationError) {
+      console.error(
+        "Journey extension notification error:",
+        notificationError
+      );
+    }
 
     return NextResponse.json({
       success: true,

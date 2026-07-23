@@ -4,6 +4,7 @@ import {
   JourneyService,
   JourneyServiceError,
 } from "@/lib/services/JourneyService";
+import { NotificationService } from "@/lib/services/NotificationService";
 
 export async function POST(req: Request) {
   try {
@@ -22,6 +23,20 @@ export async function POST(req: Request) {
       userId: user.id,
       journeyId: String(body.journeyId || ""),
     });
+
+    try {
+      await NotificationService.createGuardianNotification({
+        userId: user.id,
+        journeyId: journey.id,
+        title: "Journey Check-in",
+        message: "You checked in successfully during your Safe Journey.",
+      });
+    } catch (notificationError) {
+      console.error(
+        "Journey check-in notification error:",
+        notificationError
+      );
+    }
 
     return NextResponse.json({
       success: true,

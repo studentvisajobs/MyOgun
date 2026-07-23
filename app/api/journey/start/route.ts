@@ -4,6 +4,7 @@ import {
   JourneyService,
   JourneyServiceError,
 } from "@/lib/services/JourneyService";
+import { NotificationService } from "@/lib/services/NotificationService";
 
 export async function POST(req: Request) {
   try {
@@ -42,6 +43,20 @@ export async function POST(req: Request) {
           ? body.networkStatus
           : null,
     });
+
+    try {
+      await NotificationService.createGuardianNotification({
+        userId: user.id,
+        journeyId: journey.id,
+        title: "Journey Started",
+        message: `Your Safe Journey to ${journey.destination} has started.`,
+      });
+    } catch (notificationError) {
+      console.error(
+        "Journey notification error:",
+        notificationError
+      );
+    }
 
     return NextResponse.json(
       {

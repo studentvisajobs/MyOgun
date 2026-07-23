@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NotificationBell from "../notifications/NotificationBell";
 
 type TopBarProps = {
   user?: {
@@ -6,7 +7,9 @@ type TopBarProps = {
   } | null;
 };
 
-export default function TopBar({ user }: TopBarProps) {
+export default function TopBar({
+  user,
+}: TopBarProps) {
   return (
     <header className="flex items-center justify-between">
       <div>
@@ -21,16 +24,22 @@ export default function TopBar({ user }: TopBarProps) {
         </h1>
 
         <p className="mt-3 text-sm text-white/50">
-          {user?.name ? `Welcome, ${user.name}` : "Your digital bodyguard"}
+          {user?.name
+            ? `Welcome, ${user.name}`
+            : "Your digital bodyguard"}
         </p>
       </div>
 
-      <Link
-        href={user ? "/profile" : "/login"}
-        className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-[#121212] text-2xl shadow-xl"
-      >
-        👤
-      </Link>
+      <div className="flex items-center gap-3">
+        <NotificationBell />
+
+        <Link
+          href={user ? "/profile" : "/login"}
+          className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-[#121212] text-2xl shadow-xl"
+        >
+          👤
+        </Link>
+      </div>
     </header>
   );
 }
