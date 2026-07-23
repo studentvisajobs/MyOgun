@@ -1,8 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { GuardianEscalationService } from "@/lib/services/GuardianEscalationService";
 
 export type JourneyMonitorResult = {
   checked: number;
   markedOverdue: number;
+  escalationChecked: number;
+  escalated: number;
 };
 
 export class JourneyMonitor {
@@ -64,9 +67,16 @@ export class JourneyMonitor {
       }
     }
 
+    const escalationResult =
+      await GuardianEscalationService.run();
+
     return {
       checked: expiredJourneys.length,
       markedOverdue,
+      escalationChecked:
+        escalationResult.checked,
+      escalated:
+        escalationResult.escalated,
     };
   }
 }
