@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { NotificationService } from "@/lib/services/NotificationService";
 
 export async function POST(req: Request) {
   try {
@@ -8,7 +9,9 @@ export async function POST(req: Request) {
     const userId = String(body.userId || "");
     const latitude = Number(body.latitude);
     const longitude = Number(body.longitude);
-    const message = String(body.message || "Emergency SOS Alert");
+    const message = String(
+      body.message || "Emergency SOS Alert"
+    );
 
     if (!userId) {
       return NextResponse.json(
@@ -20,15 +23,35 @@ export async function POST(req: Request) {
     const sos = await prisma.sOSAlert.create({
       data: {
         userId,
-        latitude: Number.isFinite(latitude) ? latitude : null,
-        longitude: Number.isFinite(longitude) ? longitude : null,
+        latitude: Number.isFinite(latitude)
+          ? latitude
+          : null,
+        longitude: Number.isFinite(longitude)
+          ? longitude
+          : null,
         message,
       },
     });
 
-    const contacts = await prisma.guardianContact.findMany({
-      where: { userId },
-    });
+    try {
+      await NotificationService.createEmergencyNotification({
+        userId,
+        emergencyId: sos.id,
+        title: "Emergency Activated",
+        message:
+          "Your SOS alert has been activated. Your emergency contacts are being notified.",
+      });
+    } catch (notificationError) {
+      console.error(
+        "SOS notification error:",
+        notificationError
+      );
+    }
+
+    const contacts =
+      await prisma.guardianContact.findMany({
+        where: { userId },
+      });
 
     console.log("DEV SOS ALERT:", {
       message,
