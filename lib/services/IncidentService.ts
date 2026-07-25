@@ -367,12 +367,22 @@ export class IncidentService {
           ? "VERIFIED"
           : "PENDING";
 
+    const threat = ThreatScoreService.calculate({
+      type: incident.type,
+      confidenceScore: confidence,
+      confirmations,
+      evidenceCount,
+      isCritical: status === "CRITICAL",
+    });
+
     await prisma.incident.update({
       where: {
         id: incident.id,
       },
       data: {
         confidenceScore: confidence,
+        threatScore: threat.score,
+        threatLevel: threat.level as never,
         status,
       },
     });
@@ -380,6 +390,8 @@ export class IncidentService {
     return {
       confidence,
       status,
+      threatScore: threat.score,
+      threatLevel: threat.level,
     };
   }
 
@@ -531,14 +543,16 @@ export class IncidentService {
       );
     }
 
-    const incident = await prisma.incident.findUnique({
-      where: {
-        id: cleanIncidentId,
-      },
-      select: {
-        id: true,
-      },
-    });
+    const incident =
+      await prisma.incident.findUnique({
+        where: {
+          id: cleanIncidentId,
+        },
+        include: {
+          evidence: true,
+          confirmations: true,
+        },
+      });
 
     if (!incident) {
       throw new IncidentServiceError(
@@ -547,12 +561,37 @@ export class IncidentService {
       );
     }
 
+    const confirmationCount =
+      incident.confirmations.filter(
+        (confirmation) =>
+          confirmation.vote === "CONFIRM"
+      ).length;
+
+    const threat =
+      status === "RESOLVED"
+        ? {
+            score: 0,
+            level: "LOW" as const,
+          }
+        : ThreatScoreService.calculate({
+            type: incident.type,
+            confidenceScore:
+              incident.confidenceScore,
+            confirmations: confirmationCount,
+            evidenceCount:
+              incident.evidence.length,
+            isCritical:
+              incident.status === "CRITICAL",
+          });
+
     return prisma.incident.update({
       where: {
         id: cleanIncidentId,
       },
       data: {
         status,
+        threatScore: threat.score,
+        threatLevel: threat.level as never,
         updates: {
           create: {
             message:
