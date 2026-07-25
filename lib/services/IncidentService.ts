@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { detectArea } from "@/lib/ogunAreas";
 import { LocationService } from "@/lib/services/LocationService";
-import { CommunityNotificationService } from "@/lib/services/CommunityNotificationService";
-import { ThreatScoreService } from "@/lib/services/ThreatScoreService";
+import { IncidentIntelligenceService } from "@/lib/services/IncidentIntelligenceService";
+
 import { TrustScoreService } from "@/lib/services/TrustScoreService";
 
 export class IncidentServiceError extends Error {
@@ -133,7 +133,7 @@ export class IncidentService {
 
     const confidenceScore = isCritical ? 70 : 20;
 
-    const threat = ThreatScoreService.calculate({
+    const threat = IncidentIntelligenceService.calculateThreat({
       type: incidentType,
       confidenceScore,
       confirmations: 0,
@@ -179,7 +179,7 @@ export class IncidentService {
     });
 
     try {
-      await CommunityNotificationService.notifyNearbyUsers({
+      await IncidentIntelligenceService.notifyNearbyUsers({
         reporterUserId: validUserId ?? "",
         incidentId: incident.id,
         latitude: incident.latitude,
@@ -368,7 +368,8 @@ export class IncidentService {
           ? "VERIFIED"
           : "PENDING";
 
-    const threat = ThreatScoreService.calculate({
+    const threat =
+  IncidentIntelligenceService.calculateThreat({
       type: incident.type,
       confidenceScore: confidence,
       confirmations,
@@ -575,7 +576,7 @@ export class IncidentService {
             score: 0,
             level: "LOW" as const,
           }
-        : ThreatScoreService.calculate({
+        : IncidentIntelligenceService.calculateThreat({
             type: incident.type,
             confidenceScore:
               incident.confidenceScore,
