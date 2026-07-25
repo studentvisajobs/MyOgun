@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { detectArea } from "@/lib/ogunAreas";
 import { LocationService } from "@/lib/services/LocationService";
+import { CommunityNotificationService } from "@/lib/services/CommunityNotificationService";
+
 
 export class IncidentServiceError extends Error {
   status: number;
@@ -128,40 +130,58 @@ export class IncidentService {
 
     const isCritical = Boolean(input.isCritical);
 
-    return prisma.incident.create({
-      data: {
-        userId: input.isAnonymous
-          ? null
-          : validUserId,
-        title,
-        description: cleanOptionalText(
-          input.description
-        ),
-        type: incidentType as never,
-        latitude: input.latitude,
-        longitude: input.longitude,
-        area:
-          cleanOptionalText(input.area) ||
-          detectedArea.area ||
-          null,
-        localGovernment:
-          cleanOptionalText(
-            input.localGovernment
-          ) ||
-          detectedArea.localGovernment ||
-          null,
-        confidenceScore: isCritical ? 70 : 20,
-        status: isCritical
-          ? "CRITICAL"
-          : "PENDING",
-        isAnonymous: Boolean(input.isAnonymous),
-      },
-      include: {
-        evidence: true,
-        confirmations: true,
-        user: true,
-      },
-    });
+   const incident = await prisma.incident.create({
+  data: {
+    userId: input.isAnonymous
+      ? null
+      : validUserId,
+    title,
+    description: cleanOptionalText(
+      input.description
+    ),
+    type: incidentType as never,
+    latitude: input.latitude,
+    longitude: input.longitude,
+    area:
+      cleanOptionalText(input.area) ||
+      detectedArea.area ||
+      null,
+    localGovernment:
+      cleanOptionalText(
+        input.localGovernment
+      ) ||
+      detectedArea.localGovernment ||
+      null,
+    confidenceScore: isCritical ? 70 : 20,
+    status: isCritical
+      ? "CRITICAL"
+      : "PENDING",
+    isAnonymous: Boolean(input.isAnonymous),
+  },
+  include: {
+    evidence: true,
+    confirmations: true,
+    user: true,
+  },
+});
+
+try {
+  await CommunityNotificationService.notifyNearbyUsers({
+    reporterUserId: validUserId ?? "",
+    incidentId: incident.id,
+    latitude: incident.latitude,
+    longitude: incident.longitude,
+    title: incident.title,
+    message: incident.type.replaceAll("_", " "),
+  });
+} catch (notificationError) {
+  console.error(
+    "Community notification error:",
+    notificationError
+  );
+}
+
+return incident;
   }
 
   static async getAll() {
