@@ -3,6 +3,7 @@ import { detectArea } from "@/lib/ogunAreas";
 import { LocationService } from "@/lib/services/LocationService";
 import { CommunityNotificationService } from "@/lib/services/CommunityNotificationService";
 import { ThreatScoreService } from "@/lib/services/ThreatScoreService";
+import { TrustScoreService } from "@/lib/services/TrustScoreService";
 
 export class IncidentServiceError extends Error {
   status: number;
@@ -479,6 +480,7 @@ export class IncidentService {
     }
 
     await this.calculateConfidence(cleanIncidentId);
+    await TrustScoreService.updateUserTrust(cleanUserId);
 
     const [incident, confirmations] =
       await Promise.all([

@@ -1,3 +1,5 @@
+import { prisma } from "@/lib/prisma";
+
 const INCIDENT_WEIGHTS: Record<string, number> = {
   ROBBERY: 10,
   KIDNAPPING: 10,
