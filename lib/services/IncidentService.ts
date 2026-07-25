@@ -130,6 +130,16 @@ export class IncidentService {
 
     const isCritical = Boolean(input.isCritical);
 
+    const confidenceScore = isCritical ? 70 : 20;
+
+    const threat = ThreatScoreService.calculate({
+      type: incidentType,
+      confidenceScore,
+      confirmations: 0,
+      evidenceCount: 0,
+      isCritical,
+    });
+
     const incident = await prisma.incident.create({
       data: {
         userId: input.isAnonymous
@@ -152,7 +162,9 @@ export class IncidentService {
           ) ||
           detectedArea.localGovernment ||
           null,
-        confidenceScore: isCritical ? 70 : 20,
+        confidenceScore,
+        threatScore: threat.score,
+        threatLevel: threat.level as never,
         status: isCritical
           ? "CRITICAL"
           : "PENDING",
@@ -163,20 +175,6 @@ export class IncidentService {
         confirmations: true,
         user: true,
       },
-    });
-
-    const threat = ThreatScoreService.calculate({
-      type: incident.type,
-      confidenceScore: incident.confidenceScore,
-      confirmations: incident.confirmations.length,
-      evidenceCount: incident.evidence.length,
-      isCritical: incident.status === "CRITICAL",
-    });
-
-    console.log("Incident threat assessment:", {
-      incidentId: incident.id,
-      threatScore: threat.score,
-      threatLevel: threat.level,
     });
 
     try {
