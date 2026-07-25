@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { detectArea } from "@/lib/ogunAreas";
 import { LocationService } from "@/lib/services/LocationService";
 import { CommunityNotificationService } from "@/lib/services/CommunityNotificationService";
-
+import { ThreatScoreService } from "@/lib/services/ThreatScoreService";
 
 export class IncidentServiceError extends Error {
   status: number;
@@ -130,58 +130,72 @@ export class IncidentService {
 
     const isCritical = Boolean(input.isCritical);
 
-   const incident = await prisma.incident.create({
-  data: {
-    userId: input.isAnonymous
-      ? null
-      : validUserId,
-    title,
-    description: cleanOptionalText(
-      input.description
-    ),
-    type: incidentType as never,
-    latitude: input.latitude,
-    longitude: input.longitude,
-    area:
-      cleanOptionalText(input.area) ||
-      detectedArea.area ||
-      null,
-    localGovernment:
-      cleanOptionalText(
-        input.localGovernment
-      ) ||
-      detectedArea.localGovernment ||
-      null,
-    confidenceScore: isCritical ? 70 : 20,
-    status: isCritical
-      ? "CRITICAL"
-      : "PENDING",
-    isAnonymous: Boolean(input.isAnonymous),
-  },
-  include: {
-    evidence: true,
-    confirmations: true,
-    user: true,
-  },
-});
+    const incident = await prisma.incident.create({
+      data: {
+        userId: input.isAnonymous
+          ? null
+          : validUserId,
+        title,
+        description: cleanOptionalText(
+          input.description
+        ),
+        type: incidentType as never,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        area:
+          cleanOptionalText(input.area) ||
+          detectedArea.area ||
+          null,
+        localGovernment:
+          cleanOptionalText(
+            input.localGovernment
+          ) ||
+          detectedArea.localGovernment ||
+          null,
+        confidenceScore: isCritical ? 70 : 20,
+        status: isCritical
+          ? "CRITICAL"
+          : "PENDING",
+        isAnonymous: Boolean(input.isAnonymous),
+      },
+      include: {
+        evidence: true,
+        confirmations: true,
+        user: true,
+      },
+    });
 
-try {
-  await CommunityNotificationService.notifyNearbyUsers({
-    reporterUserId: validUserId ?? "",
-    incidentId: incident.id,
-    latitude: incident.latitude,
-    longitude: incident.longitude,
-    title: incident.title,
-    message: incident.type.replaceAll("_", " "),
-  });
-} catch (notificationError) {
-  console.error(
-    "Community notification error:",
-    notificationError
-  );
-}
+    const threat = ThreatScoreService.calculate({
+      type: incident.type,
+      confidenceScore: incident.confidenceScore,
+      confirmations: incident.confirmations.length,
+      evidenceCount: incident.evidence.length,
+      isCritical: incident.status === "CRITICAL",
+    });
 
-return incident;
+    console.log("Incident threat assessment:", {
+      incidentId: incident.id,
+      threatScore: threat.score,
+      threatLevel: threat.level,
+    });
+
+    try {
+      await CommunityNotificationService.notifyNearbyUsers({
+        reporterUserId: validUserId ?? "",
+        incidentId: incident.id,
+        latitude: incident.latitude,
+        longitude: incident.longitude,
+        title: incident.title,
+        message: incident.type.replaceAll("_", " "),
+      });
+    } catch (notificationError) {
+      console.error(
+        "Community notification error:",
+        notificationError
+      );
+    }
+
+    return incident;
   }
 
   static async getAll() {
@@ -542,12 +556,12 @@ return incident;
       data: {
         status,
         updates: {
-        create: {
+          create: {
             message:
-            status === "RESPONDING"
+              status === "RESPONDING"
                 ? "Emergency response has been assigned."
                 : "Incident has been resolved.",
-        },
+          },
         },
       },
       include: {
@@ -562,5 +576,4 @@ return incident;
       },
     });
   }
-
 }
