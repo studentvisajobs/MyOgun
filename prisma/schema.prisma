@@ -17,6 +17,12 @@ model User {
 
   createdAt DateTime @default(now())
 
+  trustScore       Int @default(50)
+  confirmedReports Int @default(0)
+  falseReports     Int @default(0)
+  verifiedReports  Int @default(0)
+  evidenceUploads  Int @default(0)
+
   videos                      Video[]
   incidents                   Incident[]
   guardianContacts            GuardianContact[]
