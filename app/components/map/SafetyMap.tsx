@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Map,
   Marker,
@@ -50,6 +50,35 @@ export default function SafetyMap() {
     useState<
       "loading" | "available" | "unavailable"
     >("loading");
+
+  const loadIncidents = useCallback(async () => {
+    try {
+      const response = await fetch(
+        "/api/map/incidents",
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        console.error(
+          "Unable to load incidents:",
+          response.status
+        );
+        return;
+      }
+
+      const data: MapIncident[] =
+        await response.json();
+
+      setIncidents(data);
+    } catch (error) {
+      console.error(
+        "Unable to load incidents:",
+        error
+      );
+    }
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -169,36 +198,28 @@ export default function SafetyMap() {
       userMarkerRef.current?.remove();
       userMarkerRef.current = null;
 
+      incidentMarkersRef.current.forEach(
+        (marker) => marker.remove()
+      );
+
+      incidentMarkersRef.current = [];
+
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    async function loadIncidents() {
-      try {
-        const response = await fetch(
-          "/api/map/incidents"
-        );
+    void loadIncidents();
 
-        if (!response.ok) {
-          return;
-        }
+    const interval = window.setInterval(() => {
+      void loadIncidents();
+    }, 30_000);
 
-        const data: MapIncident[] =
-          await response.json();
-
-        setIncidents(data);
-      } catch (error) {
-        console.error(
-          "Unable to load incidents:",
-          error
-        );
-      }
-    }
-
-    loadIncidents();
-  }, []);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [loadIncidents]);
 
   useEffect(() => {
     if (!mapRef.current) {
@@ -219,39 +240,41 @@ export default function SafetyMap() {
         return;
       }
 
- const element = document.createElement("div");
+      const element =
+        document.createElement("div");
 
-// styles...
-element.style.width = "18px";
-element.style.height = "18px";
-element.style.borderRadius = "50%";
-element.style.backgroundColor = markerColor(
-  incident.threatLevel
-);
-element.style.border = "3px solid white";
-element.style.boxShadow =
-    "0 0 10px rgba(0,0,0,.35)";
+      element.style.width = "18px";
+      element.style.height = "18px";
+      element.style.borderRadius = "50%";
+      element.style.backgroundColor = markerColor(
+        incident.threatLevel
+      );
+      element.style.border = "3px solid white";
+      element.style.boxShadow =
+        "0 0 10px rgba(0,0,0,.35)";
+      element.style.cursor = "pointer";
 
-// accessibility
-element.setAttribute(
-  "aria-label",
-  `${incident.type} incident, ${incident.threatLevel} threat`
-);
-element.setAttribute("role", "button");
-element.style.cursor = "pointer";
+      element.setAttribute(
+        "aria-label",
+        `${incident.type} incident, ${incident.threatLevel} threat`
+      );
 
-// create marker
-const marker = new Marker({
-  element,
-})
+      element.setAttribute("role", "button");
+      element.setAttribute("tabindex", "0");
+
+      const marker = new Marker({
+        element,
+      })
         .setLngLat([
           incident.longitude,
           incident.latitude,
         ])
         .setPopup(
-        new Popup().setDOMContent(
+          new Popup({
+            offset: 14,
+          }).setDOMContent(
             createIncidentPopup(incident)
-        )
+          )
         )
         .addTo(mapRef.current!);
 
@@ -268,23 +291,32 @@ const marker = new Marker({
   }, [incidents]);
 
   function createIncidentPopup(
-  incident: MapIncident
-    ) {
-    const container = document.createElement("div");
+    incident: MapIncident
+  ) {
+    const container =
+      document.createElement("div");
 
-    const title = document.createElement("strong");
+    const title =
+      document.createElement("strong");
+
     title.textContent = incident.type;
 
-    const threat = document.createElement("p");
-    threat.textContent = `Threat: ${incident.threatLevel}`;
+    const threat =
+      document.createElement("p");
 
-    const score = document.createElement("p");
-    score.textContent = `Score: ${incident.threatScore}`;
+    threat.textContent =
+      `Threat: ${incident.threatLevel}`;
+
+    const score =
+      document.createElement("p");
+
+    score.textContent =
+      `Score: ${incident.threatScore}`;
 
     container.append(title, threat, score);
 
     return container;
-    }
+  }
 
   function markerColor(
     level: MapIncident["threatLevel"]
