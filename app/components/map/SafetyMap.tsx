@@ -14,6 +14,8 @@ import {
   AttributionControl,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { MAP_CONFIG } from "@/lib/config/map";
+
 
 type UserLocation = {
   latitude: number;
@@ -97,13 +99,12 @@ export default function SafetyMap() {
 
     const map = new Map({
       container: containerRef.current,
-      style:
-        "https://demotiles.maplibre.org/style.json",
+      style: MAP_CONFIG.style,
       center: [
         DEFAULT_LOCATION.longitude,
         DEFAULT_LOCATION.latitude,
       ],
-      zoom: 11,
+      zoom: MAP_CONFIG.defaultZoom,
       attributionControl: false,
     });
 
@@ -163,7 +164,7 @@ export default function SafetyMap() {
 
       mapRef.current.flyTo({
         center: coordinates,
-        zoom: 14,
+        zoom: MAP_CONFIG.userZoom,
         essential: true,
       });
     }
@@ -229,7 +230,7 @@ export default function SafetyMap() {
 
     const interval = window.setInterval(() => {
       void loadIncidents();
-    }, 30_000);
+    }, MAP_CONFIG.refreshInterval);
 
     return () => {
       window.clearInterval(interval);
