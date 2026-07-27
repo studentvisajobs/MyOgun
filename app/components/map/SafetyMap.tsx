@@ -16,7 +16,6 @@ import {
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_CONFIG } from "@/lib/config/map";
 
-
 type UserLocation = {
   latitude: number;
   longitude: number;
@@ -26,10 +25,24 @@ type MapIncident = {
   id: string;
   type: string;
   status: string;
-  threatLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  threatLevel:
+    | "LOW"
+    | "MEDIUM"
+    | "HIGH"
+    | "CRITICAL";
   threatScore: number;
   latitude: number | null;
   longitude: number | null;
+};
+
+type GuardianLocation = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  status: string;
+  updatedAt: string;
 };
 
 const DEFAULT_LOCATION: UserLocation = {
@@ -50,8 +63,14 @@ export default function SafetyMap() {
   const incidentMarkersRef =
     useRef<Marker[]>([]);
 
+  const guardianMarkersRef =
+    useRef<Marker[]>([]);
+
   const [incidents, setIncidents] =
     useState<MapIncident[]>([]);
+
+  const [guardians, setGuardians] =
+    useState<GuardianLocation[]>([]);
 
   const [locationStatus, setLocationStatus] =
     useState<
@@ -87,6 +106,36 @@ export default function SafetyMap() {
     } catch (error) {
       console.error(
         "Unable to load incidents:",
+        error
+      );
+    }
+  }, []);
+
+  const loadGuardians = useCallback(async () => {
+    try {
+      const response = await fetch(
+        "/api/map/guardians",
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        console.error(
+          "Unable to load guardian locations:",
+          response.status
+        );
+
+        return;
+      }
+
+      const data: GuardianLocation[] =
+        await response.json();
+
+      setGuardians(data);
+    } catch (error) {
+      console.error(
+        "Unable to load guardian locations:",
         error
       );
     }
@@ -176,14 +225,19 @@ export default function SafetyMap() {
         userMarkerRef.current?.remove();
         userMarkerRef.current = null;
 
-        incidentMarkersRef.current.forEach((marker) =>
-            marker.remove()
+        incidentMarkersRef.current.forEach(
+          (marker) => marker.remove()
         );
         incidentMarkersRef.current = [];
 
+        guardianMarkersRef.current.forEach(
+          (marker) => marker.remove()
+        );
+        guardianMarkersRef.current = [];
+
         map.remove();
         mapRef.current = null;
-        };
+      };
     }
 
     navigator.geolocation.getCurrentPosition(
@@ -217,8 +271,12 @@ export default function SafetyMap() {
       incidentMarkersRef.current.forEach(
         (marker) => marker.remove()
       );
-
       incidentMarkersRef.current = [];
+
+      guardianMarkersRef.current.forEach(
+        (marker) => marker.remove()
+      );
+      guardianMarkersRef.current = [];
 
       map.remove();
       mapRef.current = null;
@@ -227,15 +285,17 @@ export default function SafetyMap() {
 
   useEffect(() => {
     void loadIncidents();
+    void loadGuardians();
 
     const interval = window.setInterval(() => {
       void loadIncidents();
+      void loadGuardians();
     }, MAP_CONFIG.refreshInterval);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [loadIncidents]);
+  }, [loadIncidents, loadGuardians]);
 
   useEffect(() => {
     if (!mapRef.current) {
@@ -394,34 +454,40 @@ export default function SafetyMap() {
           {locationStatus === "unavailable" &&
             "Location unavailable — showing Abeokuta"}
         </p>
+
+        <p className="mt-1 text-xs text-slate-600">
+          Guardians sharing location:{" "}
+          {guardians.length}
+        </p>
       </div>
+
       <div className="absolute bottom-4 right-4 z-10 rounded-2xl border border-white/70 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
-    <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-        Threat levels
-    </p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+          Threat levels
+        </p>
 
-    <div className="mt-2 space-y-1.5 text-xs text-slate-700">
-        <div className="flex items-center gap-2">
-        <span className="h-3 w-3 rounded-full bg-red-600" />
-        <span>Critical</span>
-        </div>
+        <div className="mt-2 space-y-1.5 text-xs text-slate-700">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-red-600" />
+            <span>Critical</span>
+          </div>
 
-        <div className="flex items-center gap-2">
-        <span className="h-3 w-3 rounded-full bg-orange-500" />
-        <span>High</span>
-        </div>
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-orange-500" />
+            <span>High</span>
+          </div>
 
-        <div className="flex items-center gap-2">
-        <span className="h-3 w-3 rounded-full bg-yellow-500" />
-        <span>Medium</span>
-        </div>
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-yellow-500" />
+            <span>Medium</span>
+          </div>
 
-        <div className="flex items-center gap-2">
-        <span className="h-3 w-3 rounded-full bg-green-600" />
-        <span>Low</span>
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-green-600" />
+            <span>Low</span>
+          </div>
         </div>
-    </div>
-    </div>
+      </div>
     </section>
   );
 }
