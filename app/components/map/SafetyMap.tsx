@@ -366,6 +366,44 @@ export default function SafetyMap() {
     };
   }, [incidents]);
 
+  useEffect(() => {
+  if (!mapRef.current) {
+    return;
+  }
+
+  guardianMarkersRef.current.forEach((marker) =>
+    marker.remove()
+  );
+
+  guardianMarkersRef.current = [];
+
+  guardians.forEach((guardian) => {
+    const marker = new Marker({
+      element: createGuardianMarker(),
+    })
+      .setLngLat([
+        guardian.longitude,
+        guardian.latitude,
+      ])
+      .setPopup(
+        new Popup({ offset: 14 }).setText(
+          guardian.name
+        )
+      )
+      .addTo(mapRef.current!);
+
+    guardianMarkersRef.current.push(marker);
+  });
+
+  return () => {
+    guardianMarkersRef.current.forEach((marker) =>
+      marker.remove()
+    );
+
+    guardianMarkersRef.current = [];
+  };
+}, [guardians]);
+
   function createIncidentPopup(
     incident: MapIncident
   ) {
@@ -426,6 +464,21 @@ export default function SafetyMap() {
         return "#16a34a";
     }
   }
+
+function createGuardianMarker() {
+  const element = document.createElement("div");
+
+  element.style.width = "18px";
+  element.style.height = "18px";
+  element.style.borderRadius = "50%";
+  element.style.backgroundColor = "#2563eb";
+  element.style.border = "3px solid white";
+  element.style.boxShadow = "0 0 10px rgba(0,0,0,.35)";
+  element.style.cursor = "pointer";
+
+  return element;
+}
+
 
   return (
     <section className="relative h-[70vh] min-h-[500px] w-full overflow-hidden rounded-3xl border border-slate-200 bg-slate-100 shadow-sm">
