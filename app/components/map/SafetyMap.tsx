@@ -175,9 +175,14 @@ export default function SafetyMap() {
         userMarkerRef.current?.remove();
         userMarkerRef.current = null;
 
+        incidentMarkersRef.current.forEach((marker) =>
+            marker.remove()
+        );
+        incidentMarkersRef.current = [];
+
         map.remove();
         mapRef.current = null;
-      };
+        };
     }
 
     navigator.geolocation.getCurrentPosition(
@@ -369,7 +374,7 @@ export default function SafetyMap() {
         aria-label="MyOgun interactive safety map"
       />
 
-      <div className="absolute left-4 top-4 z-10 rounded-2xl border border-white/70 bg-white/90 px-4 py-3 shadow-lg backdrop-blur">
+      <div className="absolute left-4 top-4 z-10 rounded-2xl border border-white/70 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
         <p className="text-sm font-semibold text-slate-900">
           MyOgun Safety Map
         </p>
@@ -389,6 +394,33 @@ export default function SafetyMap() {
             "Location unavailable — showing Abeokuta"}
         </p>
       </div>
+      <div className="absolute bottom-4 right-4 z-10 rounded-2xl border border-white/70 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+    <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+        Threat levels
+    </p>
+
+    <div className="mt-2 space-y-1.5 text-xs text-slate-700">
+        <div className="flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full bg-red-600" />
+        <span>Critical</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full bg-orange-500" />
+        <span>High</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full bg-yellow-500" />
+        <span>Medium</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full bg-green-600" />
+        <span>Low</span>
+        </div>
+    </div>
+    </div>
     </section>
   );
 }
