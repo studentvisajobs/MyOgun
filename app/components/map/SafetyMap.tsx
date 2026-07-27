@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Map,
   Marker,
@@ -51,6 +56,9 @@ export default function SafetyMap() {
       "loading" | "available" | "unavailable"
     >("loading");
 
+  const [lastUpdated, setLastUpdated] =
+    useState<Date | null>(null);
+
   const loadIncidents = useCallback(async () => {
     try {
       const response = await fetch(
@@ -65,6 +73,7 @@ export default function SafetyMap() {
           "Unable to load incidents:",
           response.status
         );
+
         return;
       }
 
@@ -72,6 +81,7 @@ export default function SafetyMap() {
         await response.json();
 
       setIncidents(data);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error(
         "Unable to load incidents:",
@@ -260,7 +270,7 @@ export default function SafetyMap() {
       );
 
       element.setAttribute("role", "button");
-      element.setAttribute("tabindex", "0");
+      element.tabIndex = 0;
 
       const marker = new Marker({
         element,
@@ -318,6 +328,21 @@ export default function SafetyMap() {
     return container;
   }
 
+  function formatLastUpdated() {
+    if (!lastUpdated) {
+      return "Loading live incidents...";
+    }
+
+    return `Live updates active — ${lastUpdated.toLocaleTimeString(
+      [],
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }
+    )}`;
+  }
+
   function markerColor(
     level: MapIncident["threatLevel"]
   ) {
@@ -347,6 +372,10 @@ export default function SafetyMap() {
       <div className="absolute left-4 top-4 z-10 rounded-2xl border border-white/70 bg-white/90 px-4 py-3 shadow-lg backdrop-blur">
         <p className="text-sm font-semibold text-slate-900">
           MyOgun Safety Map
+        </p>
+
+        <p className="mt-1 text-xs font-medium text-green-600">
+          🟢 {formatLastUpdated()}
         </p>
 
         <p className="mt-1 text-xs text-slate-600">
