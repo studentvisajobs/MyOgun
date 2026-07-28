@@ -140,6 +140,8 @@ export default function GuardianCircleClient({
     networkSummary.emergencies -
     networkSummary.travelling;
 
+  const [, setClockTick] = useState(0); 
+
   const loadGuardianNetwork = useCallback(
     async (manualRefresh = false) => {
       try {
@@ -183,6 +185,17 @@ export default function GuardianCircleClient({
 
   useEffect(() => {
     setMounted(true);
+  
+      useEffect(() => {
+      const interval = window.setInterval(() => {
+        setClockTick((current) => current + 1);
+      }, 10_000);
+
+      return () => {
+        window.clearInterval(interval);
+      };
+    }, []);
+
 
     if (
       myLocation &&
@@ -294,8 +307,32 @@ export default function GuardianCircleClient({
           );
         }
       },
-      () => {
-        setStatusText("Location permission denied.");
+      (error) => {
+        console.error(
+          "Location sharing error:",
+          error
+        );
+
+        if (
+          error.code ===
+          GeolocationPositionError.PERMISSION_DENIED
+        ) {
+          setStatusText(
+            "Location permission was denied. Please allow location access in your browser."
+          );
+        } else if (
+          error.code ===
+          GeolocationPositionError.POSITION_UNAVAILABLE
+        ) {
+          setStatusText(
+            "Your current location is unavailable."
+          );
+        } else {
+          setStatusText(
+            "Location request timed out. Please try again."
+          );
+        }
+
         setSharing(false);
       },
       {
@@ -446,9 +483,25 @@ export default function GuardianCircleClient({
         <button
           type="button"
           onClick={() => {
-            setStatusText("");
-            setSharing((current) => !current);
+            if (sharing) {
+              setSharing(false);
+              setStatusText("Live location sharing stopped.");
+              return;
+            }
+
+            if (!navigator.geolocation) {
+              setStatusText(
+                "GPS is not available on this device."
+              );
+              return;
+            }
+
+            setStatusText(
+              "Requesting your current location..."
+            );
+            setSharing(true);
           }}
+
           className={`mt-5 w-full rounded-full py-4 font-black ${
             sharing
               ? "bg-red-500 text-white"
