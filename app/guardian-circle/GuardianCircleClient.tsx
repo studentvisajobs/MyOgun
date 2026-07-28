@@ -183,27 +183,26 @@ export default function GuardianCircleClient({
     []
   );
 
-  useEffect(() => {
-    setMounted(true);
-  
-      useEffect(() => {
-      const interval = window.setInterval(() => {
-        setClockTick((current) => current + 1);
-      }, 10_000);
+useEffect(() => {
+  setMounted(true);
 
-      return () => {
-        window.clearInterval(interval);
-      };
-    }, []);
+  if (
+    myLocation &&
+    locationStatus(myLocation.updatedAt) === "ONLINE"
+  ) {
+    setSharing(true);
+  }
+}, [myLocation]);
 
+useEffect(() => {
+  const interval = window.setInterval(() => {
+    setClockTick((current) => current + 1);
+  }, 10_000);
 
-    if (
-      myLocation &&
-      locationStatus(myLocation.updatedAt) === "ONLINE"
-    ) {
-      setSharing(true);
-    }
-  }, [myLocation]);
+  return () => {
+    window.clearInterval(interval);
+  };
+}, []);
 
   useEffect(() => {
     void loadGuardianNetwork();
