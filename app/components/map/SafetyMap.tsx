@@ -386,10 +386,10 @@ export default function SafetyMap() {
         guardian.latitude,
       ])
       .setPopup(
-        new Popup({ offset: 14 }).setText(
-          guardian.name
+        new Popup({ offset: 14 }).setDOMContent(
+            createGuardianPopup(guardian)
         )
-      )
+        )
       .addTo(mapRef.current!);
 
     guardianMarkersRef.current.push(marker);
@@ -432,6 +432,42 @@ export default function SafetyMap() {
     return container;
   }
 
+
+  function createGuardianPopup(
+  guardian: GuardianLocation
+) {
+  const container = document.createElement("div");
+
+  const title = document.createElement("strong");
+  title.textContent = guardian.name;
+
+  const status = document.createElement("p");
+  status.textContent = `Status: ${guardian.status}`;
+
+  const accuracy = document.createElement("p");
+  accuracy.textContent =
+    guardian.accuracy != null
+      ? `Accuracy: ${Math.round(
+          guardian.accuracy
+        )} m`
+      : "Accuracy unavailable";
+
+  const updated = document.createElement("p");
+  updated.textContent = `Updated: ${new Date(
+    guardian.updatedAt
+  ).toLocaleTimeString()}`;
+
+  container.append(
+    title,
+    status,
+    accuracy,
+    updated
+  );
+
+  return container;
+}
+
+
   function formatLastUpdated() {
     if (!lastUpdated) {
       return "Loading live incidents...";
@@ -468,13 +504,26 @@ export default function SafetyMap() {
 function createGuardianMarker() {
   const element = document.createElement("div");
 
-  element.style.width = "18px";
-  element.style.height = "18px";
+  element.style.width = "20px";
+  element.style.height = "20px";
   element.style.borderRadius = "50%";
   element.style.backgroundColor = "#2563eb";
-  element.style.border = "3px solid white";
-  element.style.boxShadow = "0 0 10px rgba(0,0,0,.35)";
+  element.style.border = "4px solid white";
+  element.style.boxShadow =
+    "0 0 12px rgba(37,99,235,.55)";
   element.style.cursor = "pointer";
+
+  element.setAttribute(
+    "aria-label",
+    "Guardian location"
+  );
+
+  element.setAttribute(
+    "role",
+    "button"
+  );
+
+  element.tabIndex = 0;
 
   return element;
 }
