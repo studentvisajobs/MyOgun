@@ -378,22 +378,29 @@ export default function SafetyMap() {
   guardianMarkersRef.current = [];
 
   guardians.forEach((guardian) => {
-    const marker = new Marker({
-      element: createGuardianMarker(),
-    })
-      .setLngLat([
-        guardian.longitude,
-        guardian.latitude,
-      ])
-      .setPopup(
-        new Popup({ offset: 14 }).setDOMContent(
-            createGuardianPopup(guardian)
-        )
-        )
-      .addTo(mapRef.current!);
+  const element = createGuardianMarker();
 
-    guardianMarkersRef.current.push(marker);
-  });
+  element.style.backgroundColor =
+    guardianMarkerColor(guardian.status);
+
+  const marker = new Marker({
+    element,
+  })
+    .setLngLat([
+      guardian.longitude,
+      guardian.latitude,
+    ])
+    .setPopup(
+      new Popup({
+        offset: 14,
+      }).setDOMContent(
+        createGuardianPopup(guardian)
+      )
+    )
+    .addTo(mapRef.current!);
+
+  guardianMarkersRef.current.push(marker);
+});
 
   return () => {
     guardianMarkersRef.current.forEach((marker) =>
@@ -501,17 +508,31 @@ export default function SafetyMap() {
     }
   }
 
+function guardianMarkerColor(status: string) {
+  switch (status) {
+    case "ONLINE":
+      return "#22c55e";
+
+    case "OFFLINE":
+      return "#94a3b8";
+
+    default:
+      return "#eab308";
+  }
+}
+
 function createGuardianMarker() {
   const element = document.createElement("div");
 
   element.style.width = "20px";
   element.style.height = "20px";
   element.style.borderRadius = "50%";
-  element.style.backgroundColor = "#2563eb";
+  element.style.backgroundColor = "#22c55e";
   element.style.border = "4px solid white";
   element.style.boxShadow =
     "0 0 12px rgba(37,99,235,.55)";
   element.style.cursor = "pointer";
+  element.style.transition = "all .3s ease";
 
   element.setAttribute(
     "aria-label",
