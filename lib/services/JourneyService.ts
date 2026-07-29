@@ -176,17 +176,30 @@ export class JourneyService {
           longitude: input.longitude,
           status: "ACTIVE",
           timeline: {
-            create: {
-              message: "Safe Journey started.",
-              latitude: input.latitude,
-              longitude: input.longitude,
-            },
+          create: {
+            message: "Safe Journey started.",
+            latitude: input.latitude,
+            longitude: input.longitude,
           },
+        },
+        locations: {
+          create: {
+            latitude: input.latitude,
+            longitude: input.longitude,
+            accuracy,
+          },
+        },
         },
         include: {
           timeline: {
             orderBy: {
               createdAt: "desc",
+            },
+          },
+
+          locations: {
+            orderBy: {
+              createdAt: "asc",
             },
           },
         },
@@ -271,11 +284,25 @@ export class JourneyService {
           data: {
             latitude: input.latitude,
             longitude: input.longitude,
+
+            locations: {
+              create: {
+                latitude: input.latitude,
+                longitude: input.longitude,
+                accuracy,
+              },
+            },
           },
           include: {
             timeline: {
               orderBy: {
                 createdAt: "desc",
+              },
+            },
+
+            locations: {
+              orderBy: {
+                createdAt: "asc",
               },
             },
           },
