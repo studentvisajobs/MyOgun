@@ -484,6 +484,7 @@ model SafeJourney {
   updatedAt DateTime @updatedAt
 
   timeline SafeJourneyTimeline[]
+  locations SafeJourneyLocation[]
 }
 
 model SafeJourneyTimeline {
@@ -500,6 +501,26 @@ model SafeJourneyTimeline {
   createdAt DateTime @default(now())
 
   @@index([journeyId])
+}
+
+model SafeJourneyLocation {
+  id String @id @default(cuid())
+
+  journeyId String
+  journey SafeJourney @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  latitude Float
+  longitude Float
+  accuracy Float?
+
+  speed Float?
+
+  heading Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([journeyId])
+  @@index([createdAt])
 }
 
 enum SafeJourneyStatus {
