@@ -418,6 +418,11 @@ export class JourneyService {
             createdAt: "desc",
           },
         },
+        locations: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
       },
     });
   }
@@ -499,6 +504,11 @@ export class JourneyService {
               createdAt: "desc",
             },
           },
+          locations: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
         },
       });
 

@@ -1,5 +1,14 @@
 "use client";
 
+import dynamic from "next/dynamic";
+
+const SafeJourneyMap = dynamic(
+  () => import("./components/SafeJourneyMap"),
+  {
+    ssr: false,
+  }
+);
+
 import {
   useCallback,
   useEffect,
@@ -64,6 +73,19 @@ export default function JourneyClient() {
     TimelineItem[]
   >([]);
 
+      type JourneyRoutePoint = {
+      id?: string;
+      latitude: number;
+      longitude: number;
+      accuracy: number | null;
+      speed?: number | null;
+      heading?: number | null;
+      createdAt: string;
+    };
+
+const [routePoints, setRoutePoints] = useState<
+  JourneyRoutePoint[]
+>([]);
   const [status, setStatus] = useState("READY");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -346,6 +368,8 @@ export default function JourneyClient() {
             setTimeline(
               data.journey.timeline || []
             );
+
+            setRoutePoints(data.journey.locations || []);
 
             beginLocationTracking(id);
 
@@ -719,33 +743,39 @@ async function extendJourney(
 
     </div>
   </div>
-) : (
-  <div className="mt-6 grid grid-cols-2 gap-3">
-    <button
-      type="button"
-      onClick={() =>
-        void checkIn()
-      }
-      disabled={submitting}
-      className="rounded-full bg-blue-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      I&apos;m Safe
-    </button>
+      ) : (
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              void checkIn()
+            }
+            disabled={submitting}
+            className="rounded-full bg-blue-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            I&apos;m Safe
+          </button>
 
-    <button
-      type="button"
-      onClick={() =>
-        void stopJourney()
-      }
-      disabled={submitting}
-      className="rounded-full bg-red-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      End Journey
-    </button>
-  </div>
-)}
+          <button
+            type="button"
+            onClick={() =>
+              void stopJourney()
+            }
+            disabled={submitting}
+            className="rounded-full bg-red-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            End Journey
+          </button>
+        </div>
+      )}
       
       </section>
+
+      <SafeJourneyMap
+        active={active}
+        destination={destination}
+        routePoints={routePoints}
+      />
 
       <section className="mt-8 rounded-[2rem] border border-white/10 bg-[#111] p-6">
         <h2 className="text-2xl font-black">
