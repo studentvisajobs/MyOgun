@@ -297,8 +297,12 @@ export default function GuardianCircleMap({
                 <div className="min-w-40">
                   <p className="font-bold">You</p>
                   <p className="mt-1 text-sm">
-                    Your live location
-                  </p>
+                      Your live location
+                    </p>
+
+                    <p className="mt-2 text-xs">
+                      Last updated: {formatLastSeen(myLocation.updatedAt)}
+                    </p>
 
                   {myLocation.accuracy !== null && (
                     <p className="mt-1 text-xs">
@@ -369,6 +373,20 @@ export default function GuardianCircleMap({
                     {guardian.inEmergency && (
                       <p>🚨 Emergency active</p>
                     )}
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.open(
+                            `https://www.google.com/maps/dir/?api=1&destination=${guardian.latitude},${guardian.longitude}`,
+                            "_blank"
+                          );
+                        }}
+                        className="w-full rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-black transition hover:bg-emerald-400"
+                      >
+                        🧭 Get Directions
+                      </button>
+                    </div>
                   </div>
                 </div>
               </Popup>
