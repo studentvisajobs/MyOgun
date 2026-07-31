@@ -36,6 +36,7 @@ model User {
   emergencySessions           EmergencySession[]
   sharedLocations             SharedLocation[]
   emergencyContacts           EmergencyContact[]
+  pushTokens                  PushToken[]
 }
 
 model Video {
@@ -483,7 +484,7 @@ model SafeJourney {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  timeline SafeJourneyTimeline[]
+  timeline  SafeJourneyTimeline[]
   locations SafeJourneyLocation[]
 }
 
@@ -507,11 +508,11 @@ model SafeJourneyLocation {
   id String @id @default(cuid())
 
   journeyId String
-  journey SafeJourney @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  journey   SafeJourney @relation(fields: [journeyId], references: [id], onDelete: Cascade)
 
-  latitude Float
+  latitude  Float
   longitude Float
-  accuracy Float?
+  accuracy  Float?
 
   speed Float?
 
@@ -559,6 +560,21 @@ enum NotificationChannel {
   COMMUNITY
   POLICE
   EMERGENCY
+}
+
+model PushToken {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token    String @unique
+  platform String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model EmergencySession {
