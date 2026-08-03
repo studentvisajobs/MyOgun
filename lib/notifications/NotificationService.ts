@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { firebaseMessaging } from "@/lib/firebase/admin";
 
 export class NotificationService {
   static async notifyUser(
@@ -16,11 +17,50 @@ export class NotificationService {
       return;
     }
 
-    console.log(
-      `Sending "${title}" to ${tokens.length} devices`
+    const registrationTokens = tokens.map(
+      (token) => token.token
     );
 
-    // Firebase logic will go here later
+    const response =
+      await firebaseMessaging.sendEachForMulticast({
+        tokens: registrationTokens,
+
+        notification: {
+          title,
+          body: message,
+        },
+
+        data: {
+          clickAction: "/guardian",
+        },
+      });
+
+    const invalidTokens: string[] = [];
+
+    response.responses.forEach(
+      (result, index) => {
+        if (!result.success) {
+          invalidTokens.push(
+            registrationTokens[index]
+          );
+
+          console.error(
+            "Push notification error:",
+            result.error
+          );
+        }
+      }
+    );
+
+    if (invalidTokens.length > 0) {
+      await prisma.pushToken.deleteMany({
+        where: {
+          token: {
+            in: invalidTokens,
+          },
+        },
+      });
+    }
   }
 
   static async notifyGuardians(

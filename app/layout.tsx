@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "leaflet/dist/leaflet.css";
+import PushNotificationProvider from "@/app/components/PushNotificationProvider";
+
 
 export const metadata: Metadata = {
   title: "MyOgun",
@@ -14,7 +16,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body>
+      <PushNotificationProvider />
+      {children}
+    </body>
     </html>
   );
 }

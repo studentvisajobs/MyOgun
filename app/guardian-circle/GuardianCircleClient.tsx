@@ -130,7 +130,9 @@ export default function GuardianCircleClient({
   const lastUploadRef = useRef<number>(0);
 
   const status = mounted
-    ? locationStatus(location?.updatedAt)
+    ? sharing
+      ? locationStatus(location?.updatedAt)
+      : "OFFLINE"
     : "OFFLINE";
 
   const connected = networkSummary.total || guardians.length;
@@ -185,14 +187,7 @@ export default function GuardianCircleClient({
 
 useEffect(() => {
   setMounted(true);
-
-  if (
-    myLocation &&
-    locationStatus(myLocation.updatedAt) === "ONLINE"
-  ) {
-    setSharing(true);
-  }
-}, [myLocation]);
+}, []);
 
 useEffect(() => {
   const interval = window.setInterval(() => {
