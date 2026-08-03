@@ -6,7 +6,7 @@ export async function POST() {
   });
 
   response.cookies.set({
-    name: "session",
+    name: "myogun_user_id",
     value: "",
     expires: new Date(0),
     maxAge: 0,
