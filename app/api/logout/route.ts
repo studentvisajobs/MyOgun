@@ -5,7 +5,16 @@ export async function POST() {
     success: true,
   });
 
-  response.cookies.delete("session");
+  response.cookies.set({
+    name: "session",
+    value: "",
+    expires: new Date(0),
+    maxAge: 0,
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
 
   return response;
 }
