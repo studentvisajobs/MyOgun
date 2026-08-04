@@ -35,7 +35,7 @@ export default function LoginPage() {
     setLoading(false);
 
     if (!response.ok) {
-      setStatus(data.error || "Failed to send OTP.");
+      setStatus(data.error || "Failed to Continue.");
       return;
     }
 
@@ -86,10 +86,12 @@ export default function LoginPage() {
         </a>
 
         <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-          <h1 className="text-4xl font-black">Login to MyOgun</h1>
+          <h1 className="text-4xl font-black">
+            Login or Create Account
+          </h1>
 
           <p className="mt-3 text-white/60">
-            Sign in with your phone number. No password required.
+            New users can create an account with their name and phone number. Existing users can log in with the same details.
           </p>
 
           {step === "phone" && (
@@ -119,7 +121,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full rounded-full bg-emerald-500 px-6 py-4 font-black text-black disabled:opacity-50"
               >
-                {loading ? "Please wait..." : "Send OTP"}
+                {loading ? "Please wait..." : "Continue"}
               </button>
             </div>
           )}
@@ -141,7 +143,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full rounded-full bg-emerald-500 px-6 py-4 font-black text-black disabled:opacity-50"
               >
-                {loading ? "Please wait..." : "Verify & Login"}
+                {loading ? "Please wait..." : "Verify & Continue"}
               </button>
 
               <button
