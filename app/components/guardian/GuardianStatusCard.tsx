@@ -93,13 +93,26 @@ function getPresenceStyle(presence: Presence) {
 
 function formatBattery(level: number | null) {
   if (level === null) return "Unknown";
-  return `${level}%`;
+
+  const percentage =
+    level <= 1
+      ? Math.round(level * 100)
+      : Math.round(level);
+
+  return `${percentage}%`;
 }
 
 function getBatteryStyle(level: number | null) {
   if (level === null) return "text-white/45";
-  if (level <= 20) return "text-red-300";
-  if (level <= 40) return "text-yellow-300";
+
+  const percentage =
+    level <= 1
+      ? Math.round(level * 100)
+      : Math.round(level);
+
+  if (percentage <= 20) return "text-red-300";
+  if (percentage <= 40) return "text-yellow-300";
+
   return "text-emerald-300";
 }
 
@@ -407,37 +420,58 @@ export default function GuardianStatusCard({
             </div>
           )}
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {guardian.sharingLocation &&
-            guardian.latitude !== null &&
-            guardian.longitude !== null ? (
-              <Link
-                href={`/guardian-circle?guardian=${guardian.id}`}
-                className="rounded-full bg-emerald-500 px-4 py-3 text-center text-sm font-black text-black transition hover:bg-emerald-400"
-              >
-                View Location
-              </Link>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="cursor-not-allowed rounded-full bg-white/5 px-4 py-3 text-sm font-black text-white/30"
-              >
-                Location Unavailable
-              </button>
-            )}
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        {guardian.sharingLocation &&
+        guardian.latitude !== null &&
+        guardian.longitude !== null ? (
+          <>
+            <Link
+              href={`/guardian-circle?guardian=${guardian.id}`}
+              className="rounded-full bg-emerald-500 px-4 py-3 text-center text-xs font-black text-black transition hover:bg-emerald-400"
+            >
+              🗺️ Map
+            </Link>
 
             <a
-              href={`tel:${guardian.phone}`}
-              className={`rounded-full border px-4 py-3 text-center text-sm font-black transition ${
-                guardian.inEmergency
-                  ? "border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500 hover:text-white"
-                  : "border-white/10 text-white/70 hover:bg-white/5"
-              }`}
+              href={`https://www.google.com/maps/dir/?api=1&destination=${guardian.latitude},${guardian.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full border border-blue-500/40 bg-blue-500/10 px-4 py-3 text-center text-xs font-black text-blue-200 transition hover:bg-blue-500 hover:text-white"
             >
-              Call Guardian
+              📍 Route
             </a>
-          </div>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled
+              className="cursor-not-allowed rounded-full bg-white/5 px-4 py-3 text-xs font-black text-white/30"
+            >
+              🗺️ N/A
+            </button>
+
+            <button
+              type="button"
+              disabled
+              className="cursor-not-allowed rounded-full bg-white/5 px-4 py-3 text-xs font-black text-white/30"
+            >
+              📍 N/A
+            </button>
+          </>
+        )}
+
+        <a
+          href={`tel:${guardian.phone}`}
+          className={`rounded-full border px-4 py-3 text-center text-xs font-black transition ${
+            guardian.inEmergency
+              ? "border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500 hover:text-white"
+              : "border-white/10 text-white/70 hover:bg-white/5"
+          }`}
+        >
+          📞 Call
+        </a>
+      </div>
         </div>
       </div>
     </article>

@@ -149,48 +149,70 @@ function AutoFitMap({
   const map = useMap();
 
   useEffect(() => {
-    const points: [number, number][] = [];
-
-    if (myLocation) {
-      points.push([
-        myLocation.latitude,
-        myLocation.longitude,
-      ]);
-    }
-
-    guardians.forEach((guardian) => {
-      if (
-        guardian.sharingLocation &&
+    const emergencyGuardian = guardians.find(
+      (guardian) =>
+        guardian.inEmergency &&
         guardian.latitude !== null &&
         guardian.longitude !== null
-      ) {
-        points.push([
-          guardian.latitude,
-          guardian.longitude,
-        ]);
-      }
-    });
+    );
 
-    if (points.length === 0) {
+    if (emergencyGuardian) {
+      map.setView(
+        [
+          emergencyGuardian.latitude as number,
+          emergencyGuardian.longitude as number,
+        ],
+        17
+      );
+
       return;
     }
 
-    if (points.length === 1) {
-      map.setView(points[0], 15);
+    const onlineGuardian = guardians.find(
+      (guardian) =>
+        guardian.presence === "ONLINE" &&
+        guardian.latitude !== null &&
+        guardian.longitude !== null
+    );
+
+    if (onlineGuardian) {
+      map.setView(
+        [
+          onlineGuardian.latitude as number,
+          onlineGuardian.longitude as number,
+        ],
+        16
+      );
+
       return;
     }
 
-    const bounds: LatLngBoundsExpression = points;
+    if (myLocation) {
+      map.setView(
+        [myLocation.latitude, myLocation.longitude],
+        15
+      );
 
-    map.fitBounds(bounds, {
-      padding: [40, 40],
-      maxZoom: 15,
-    });
+      return;
+    }
+
+    if (
+      guardians.length > 0 &&
+      guardians[0].latitude !== null &&
+      guardians[0].longitude !== null
+    ) {
+      map.setView(
+        [
+          guardians[0].latitude as number,
+          guardians[0].longitude as number,
+        ],
+        15
+      );
+    }
   }, [map, myLocation, guardians]);
 
   return null;
 }
-
 export default function GuardianCircleMap({
   myLocation,
   guardians,

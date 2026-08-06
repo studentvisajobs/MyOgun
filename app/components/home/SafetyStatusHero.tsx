@@ -25,42 +25,57 @@ export default function SafetyStatusHero({
         <div
           className={`mx-auto flex h-32 w-32 items-center justify-center rounded-full border ${
             hasAlerts
-              ? "border-yellow-400 bg-yellow-400/10"
+              ? "border-red-500 bg-red-500/10"
               : "border-emerald-500 bg-emerald-500/10"
           }`}
         >
           <span className="text-6xl">
-            {hasAlerts ? "⚠️" : "🛡️"}
+            {hasAlerts ? "🚨" : "🛡️"}
           </span>
         </div>
 
         <h2
           className={`mt-5 text-3xl font-black ${
-            hasAlerts ? "text-yellow-300" : "text-emerald-400"
+            hasAlerts
+              ? "text-red-400"
+              : "text-emerald-400"
           }`}
         >
-          {hasAlerts ? "STAY ALERT" : "STAY ALERT"}
+          {hasAlerts ? "IMMEDIATE DANGER" : "SAFETY MONITORING ACTIVE"}
         </h2>
 
-        <p className="mt-2 text-white/60">
-          {hasAlerts
-            ? `${activeAlerts} active alert${activeAlerts > 1 ? "s" : ""} nearby.`
-            : "No immediate danger detected."}
-        </p>
+        {hasAlerts && (
+          <p className="mt-2 text-white/70">
+            {activeAlerts} active alert
+            {activeAlerts > 1 ? "s" : ""} nearby.
+          </p>
+        )}
 
         <div className="mt-5 grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-black/40 p-4">
             <p className="text-2xl font-black text-emerald-400">
               {guardianCount}
             </p>
-            <p className="text-xs text-white/50">Guardians</p>
+
+            <p className="text-xs text-white/50">
+              Guardians
+            </p>
           </div>
 
           <div className="rounded-2xl bg-black/40 p-4">
-            <p className="text-2xl font-black text-yellow-300">
+            <p
+              className={`text-2xl font-black ${
+                hasAlerts
+                  ? "text-red-400"
+                  : "text-white/50"
+              }`}
+            >
               {activeAlerts}
             </p>
-            <p className="text-xs text-white/50">Active Alerts</p>
+
+            <p className="text-xs text-white/50">
+              Active Alerts
+            </p>
           </div>
         </div>
       </div>
