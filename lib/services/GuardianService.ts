@@ -1,6 +1,6 @@
-export {};
 import { prisma } from "@/lib/prisma";
 import { LocationService } from "@/lib/services/LocationService";
+import { NotificationService as PushNotificationService } from "@/lib/notifications/NotificationService";
 
 type Presence = "ONLINE" | "RECENT" | "OFFLINE";
 
@@ -202,38 +202,46 @@ export class GuardianService {
     };
   }
 
-  static async sendInvitation(
-    input: SendInvitationInput
-  ) {
-    const receiverName = input.receiverName.trim();
-    const receiverPhone = normalizePhone(
-      input.receiverPhone
+ static async sendInvitation(
+  input: SendInvitationInput
+) {
+  const receiverName = input.receiverName.trim();
+
+  const receiverPhone = normalizePhone(
+    input.receiverPhone
+  );
+
+  const senderPhone = normalizePhone(
+    input.senderPhone
+  );
+
+  const relation = cleanOptionalText(
+    input.relation
+  );
+
+  if (!receiverName) {
+    throw new GuardianServiceError(
+      "Guardian name is required.",
+      400
     );
-    const senderPhone = normalizePhone(input.senderPhone);
-    const relation = cleanOptionalText(input.relation);
+  }
 
-    if (!receiverName) {
-      throw new GuardianServiceError(
-        "Guardian name is required.",
-        400
-      );
-    }
+  if (!receiverPhone) {
+    throw new GuardianServiceError(
+      "Guardian phone number is required.",
+      400
+    );
+  }
 
-    if (!receiverPhone) {
-      throw new GuardianServiceError(
-        "Guardian phone number is required.",
-        400
-      );
-    }
+  if (receiverPhone === senderPhone) {
+    throw new GuardianServiceError(
+      "You cannot invite yourself as a guardian.",
+      400
+    );
+  }
 
-    if (receiverPhone === senderPhone) {
-      throw new GuardianServiceError(
-        "You cannot invite yourself as a guardian.",
-        400
-      );
-    }
-
-    const receiverUser = await prisma.user.findFirst({
+  const receiverUser =
+    await prisma.user.findFirst({
       where: {
         phone: receiverPhone,
       },
@@ -244,57 +252,62 @@ export class GuardianService {
       },
     });
 
-    const existingGuardian =
-      await prisma.guardianContact.findFirst({
-        where: {
-          userId: input.senderId,
-          phone: receiverPhone,
-        },
-        select: {
-          id: true,
-        },
-      });
+  const existingGuardian =
+    await prisma.guardianContact.findFirst({
+      where: {
+        userId: input.senderId,
+        phone: receiverPhone,
+      },
+      select: {
+        id: true,
+      },
+    });
 
-    if (existingGuardian) {
-      throw new GuardianServiceError(
-        "This person is already in your Guardian Circle.",
-        409
-      );
-    }
+  if (existingGuardian) {
+    throw new GuardianServiceError(
+      "This person is already in your Guardian Circle.",
+      409
+    );
+  }
 
-    const existingInvitation =
-      await prisma.guardianInvitation.findFirst({
-        where: {
-          senderId: input.senderId,
-          receiverPhone,
-          status: "PENDING",
-        },
-        select: {
-          id: true,
-        },
-      });
+  const existingInvitation =
+    await prisma.guardianInvitation.findFirst({
+      where: {
+        senderId: input.senderId,
+        receiverPhone,
+        status: "PENDING",
+      },
+      select: {
+        id: true,
+      },
+    });
 
-    if (existingInvitation) {
-      throw new GuardianServiceError(
-        "A pending invitation has already been sent.",
-        409
-      );
-    }
+  if (existingInvitation) {
+    throw new GuardianServiceError(
+      "A pending invitation has already been sent.",
+      409
+    );
+  }
 
-    return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(
+    async (tx) => {
       const invitation =
         await tx.guardianInvitation.create({
           data: {
             senderId: input.senderId,
-            receiverId: receiverUser?.id ?? null,
+            receiverId:
+              receiverUser?.id ?? null,
+
             receiverName:
               receiverUser?.name ||
               receiverName ||
               "Guardian",
+
             receiverPhone,
             relation,
             status: "PENDING",
           },
+
           include: {
             sender: {
               select: {
@@ -303,6 +316,7 @@ export class GuardianService {
                 phone: true,
               },
             },
+
             receiver: {
               select: {
                 id: true,
@@ -317,10 +331,15 @@ export class GuardianService {
         await tx.notification.create({
           data: {
             userId: receiverUser.id,
-            title: "Guardian Invitation",
+
+            title:
+              "Guardian Invitation",
+
             message: `${
-              input.senderName || input.senderPhone
+              input.senderName ||
+              input.senderPhone
             } invited you to join their Guardian Network.`,
+
             channel: "GUARDIAN",
           },
         });
@@ -328,10 +347,34 @@ export class GuardianService {
 
       return {
         invitation,
-        receiverRegistered: Boolean(receiverUser),
+        receiverRegistered:
+          Boolean(receiverUser),
       };
-    });
+    }
+  );
+
+  if (receiverUser) {
+    try {
+      await PushNotificationService.notifyUser(
+        receiverUser.id,
+
+        "👥 Guardian Invitation",
+
+        `${
+          input.senderName ||
+          input.senderPhone
+        } invited you to join their Guardian Circle. Open MyOgun to accept or decline.`
+      );
+    } catch (pushError) {
+      console.error(
+        "Guardian invitation push error:",
+        pushError
+      );
+    }
   }
+
+  return result;
+}
 
   static async getInvitations(
     userId: string,

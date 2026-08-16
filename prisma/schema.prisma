@@ -37,6 +37,9 @@ model User {
   sharedLocations             SharedLocation[]
   emergencyContacts           EmergencyContact[]
   pushTokens                  PushToken[]
+
+  preferredArea            String?
+  preferredLocalGovernment String?
 }
 
 model Video {
