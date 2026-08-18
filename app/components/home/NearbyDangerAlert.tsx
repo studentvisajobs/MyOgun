@@ -110,23 +110,58 @@ export default function NearbyDangerAlert({
             if (data.closest) {
             const incident = data.closest as NearbyIncident;
 
-            setClosest(incident);
-            onDangerChange?.(incident);
+setClosest(incident);
+onDangerChange?.(incident);
 
-              const level = getDangerLevel(incident.distance);
-              const vibrationPattern = getVibrationPattern(level);
+const level = getDangerLevel(incident.distance);
+const vibrationPattern = getVibrationPattern(level);
 
-              const vibrationKey = `myogun-danger-${incident.id}-${level}`;
-              const alreadyAlerted = sessionStorage.getItem(vibrationKey);
+const alertKey = `myogun-danger-${incident.id}-${level}`;
+const alreadyAlerted =
+  sessionStorage.getItem(alertKey);
 
-              if (
-                vibrationPattern &&
-                !alreadyAlerted &&
-                "vibrate" in navigator
-              ) {
-                navigator.vibrate(vibrationPattern);
-                sessionStorage.setItem(vibrationKey, "true");
-              }
+if (!alreadyAlerted) {
+  if (
+    vibrationPattern &&
+    "vibrate" in navigator
+  ) {
+    navigator.vibrate(vibrationPattern);
+  }
+
+  if (
+    level === "danger" ||
+    level === "critical"
+  ) {
+    try {
+      await fetch(
+        "/api/nearby-danger/notify",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            incidentId: incident.id,
+            level,
+            distance:
+              incident.distance,
+          }),
+        }
+      );
+    } catch (notificationError) {
+      console.error(
+        "Nearby danger notification error:",
+        notificationError
+      );
+    }
+  }
+
+  sessionStorage.setItem(
+    alertKey,
+    "true"
+  );
+}
             } else {
               setClosest(null);
               onDangerChange?.(null);
