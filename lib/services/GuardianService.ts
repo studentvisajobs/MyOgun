@@ -447,57 +447,58 @@ export class GuardianService {
     };
   }
 
-  static async acceptInvitation(
-    input: InvitationActionInput
-  ) {
-    const receiverPhone = normalizePhone(
-      input.receiverPhone
-    );
+static async acceptInvitation(
+  input: InvitationActionInput
+) {
+  const receiverPhone = normalizePhone(
+    input.receiverPhone
+  );
 
-    const invitation =
-      await prisma.guardianInvitation.findUnique({
-        where: {
-          id: input.invitationId,
-        },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              name: true,
-              phone: true,
-            },
+  const invitation =
+    await prisma.guardianInvitation.findUnique({
+      where: {
+        id: input.invitationId,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
           },
         },
-      });
+      },
+    });
 
-    if (!invitation) {
-      throw new GuardianServiceError(
-        "Invitation not found.",
-        404
-      );
-    }
+  if (!invitation) {
+    throw new GuardianServiceError(
+      "Invitation not found.",
+      404
+    );
+  }
 
-    const isRecipient =
-      invitation.receiverId === input.receiverId ||
-      normalizePhone(invitation.receiverPhone) ===
-        receiverPhone;
+  const isRecipient =
+    invitation.receiverId === input.receiverId ||
+    normalizePhone(invitation.receiverPhone) ===
+      receiverPhone;
 
-    if (!isRecipient) {
-      throw new GuardianServiceError(
-        "This invitation is not for you.",
-        403
-      );
-    }
+  if (!isRecipient) {
+    throw new GuardianServiceError(
+      "This invitation is not for you.",
+      403
+    );
+  }
 
-    if (invitation.status !== "PENDING") {
-      throw new GuardianServiceError(
-        "Invitation has already been processed.",
-        400
-      );
-    }
+  if (invitation.status !== "PENDING") {
+    throw new GuardianServiceError(
+      "Invitation has already been processed.",
+      400
+    );
+  }
 
-    return prisma.$transaction(async (tx) => {
-      const acceptedInvitation =
+  const acceptedInvitation =
+    await prisma.$transaction(async (tx) => {
+      const accepted =
         await tx.guardianInvitation.update({
           where: {
             id: invitation.id,
@@ -534,9 +535,10 @@ export class GuardianService {
         });
       }
 
-      const normalizedSenderPhone = normalizePhone(
-        invitation.sender.phone
-      );
+      const normalizedSenderPhone =
+        normalizePhone(
+          invitation.sender.phone
+        );
 
       const receiverGuardian =
         await tx.guardianContact.findFirst({
@@ -554,7 +556,8 @@ export class GuardianService {
           data: {
             userId: input.receiverId,
             name:
-              invitation.sender.name || "Guardian",
+              invitation.sender.name ||
+              "Guardian",
             phone: normalizedSenderPhone,
             relation: invitation.relation,
             isPrimary: false,
@@ -565,67 +568,88 @@ export class GuardianService {
       await tx.notification.create({
         data: {
           userId: invitation.senderId,
-          title: "Guardian Invitation Accepted",
+          title:
+            "Guardian Invitation Accepted",
           message: `${
-            input.receiverName || receiverPhone
+            input.receiverName ||
+            receiverPhone
           } accepted your guardian invitation.`,
           channel: "GUARDIAN",
         },
       });
 
-      return acceptedInvitation;
+      return accepted;
     });
+
+  try {
+    await PushNotificationService.notifyUser(
+      invitation.senderId,
+      "✅ Guardian Invitation Accepted",
+      `${
+        input.receiverName || receiverPhone
+      } accepted your Guardian invitation.`
+    );
+  } catch (pushError) {
+    console.error(
+      "Guardian acceptance push error:",
+      pushError
+    );
   }
 
-  static async rejectInvitation(
-    input: InvitationActionInput
-  ) {
-    const receiverPhone = normalizePhone(
-      input.receiverPhone
+  return acceptedInvitation;
+}
+
+
+ static async rejectInvitation(
+  input: InvitationActionInput
+) {
+  const receiverPhone = normalizePhone(
+    input.receiverPhone
+  );
+
+  const invitation =
+    await prisma.guardianInvitation.findUnique({
+      where: {
+        id: input.invitationId,
+      },
+      select: {
+        id: true,
+        senderId: true,
+        receiverId: true,
+        receiverPhone: true,
+        status: true,
+      },
+    });
+
+  if (!invitation) {
+    throw new GuardianServiceError(
+      "Invitation not found.",
+      404
     );
+  }
 
-    const invitation =
-      await prisma.guardianInvitation.findUnique({
-        where: {
-          id: input.invitationId,
-        },
-        select: {
-          id: true,
-          senderId: true,
-          receiverId: true,
-          receiverPhone: true,
-          status: true,
-        },
-      });
+  const isRecipient =
+    invitation.receiverId === input.receiverId ||
+    normalizePhone(invitation.receiverPhone) ===
+      receiverPhone;
 
-    if (!invitation) {
-      throw new GuardianServiceError(
-        "Invitation not found.",
-        404
-      );
-    }
+  if (!isRecipient) {
+    throw new GuardianServiceError(
+      "This invitation is not for you.",
+      403
+    );
+  }
 
-    const isRecipient =
-      invitation.receiverId === input.receiverId ||
-      normalizePhone(invitation.receiverPhone) ===
-        receiverPhone;
+  if (invitation.status !== "PENDING") {
+    throw new GuardianServiceError(
+      "Invitation has already been processed.",
+      400
+    );
+  }
 
-    if (!isRecipient) {
-      throw new GuardianServiceError(
-        "This invitation is not for you.",
-        403
-      );
-    }
-
-    if (invitation.status !== "PENDING") {
-      throw new GuardianServiceError(
-        "Invitation has already been processed.",
-        400
-      );
-    }
-
-    return prisma.$transaction(async (tx) => {
-      const rejectedInvitation =
+  const rejectedInvitation =
+    await prisma.$transaction(async (tx) => {
+      const rejected =
         await tx.guardianInvitation.update({
           where: {
             id: invitation.id,
@@ -639,17 +663,36 @@ export class GuardianService {
       await tx.notification.create({
         data: {
           userId: invitation.senderId,
-          title: "Guardian Invitation Declined",
+          title:
+            "Guardian Invitation Declined",
           message: `${
-            input.receiverName || receiverPhone
+            input.receiverName ||
+            receiverPhone
           } declined your guardian invitation.`,
           channel: "GUARDIAN",
         },
       });
 
-      return rejectedInvitation;
+      return rejected;
     });
+
+  try {
+    await PushNotificationService.notifyUser(
+      invitation.senderId,
+      "Guardian Invitation Declined",
+      `${
+        input.receiverName || receiverPhone
+      } declined your Guardian invitation.`
+    );
+  } catch (pushError) {
+    console.error(
+      "Guardian rejection push error:",
+      pushError
+    );
   }
+
+  return rejectedInvitation;
+}
 
   static async getNetwork(userId: string) {
     const contacts =
