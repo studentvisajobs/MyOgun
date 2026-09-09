@@ -23,11 +23,14 @@ export default function SilentSOSClient() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<EmergencyTimelineItem[]>([]);
   const [holdProgress, setHoldProgress] = useState(0);
+  const [isOnline, setIsOnline] = useState(true);
+
 
   const [responders, setResponders] = useState<
     {
       id: string;
       guardianName: string;
+      guardianPhone: string;
       status: string;
     }[]
   >([]);
@@ -134,6 +137,38 @@ export default function SilentSOSClient() {
     clearInterval(timer);
   };
   }, [active, startedAt]);
+
+
+  useEffect(() => {
+  const updateNetworkStatus = () => {
+    setIsOnline(navigator.onLine);
+  };
+
+  updateNetworkStatus();
+
+  window.addEventListener(
+    "online",
+    updateNetworkStatus
+  );
+
+  window.addEventListener(
+    "offline",
+    updateNetworkStatus
+  );
+
+  return () => {
+    window.removeEventListener(
+      "online",
+      updateNetworkStatus
+    );
+
+    window.removeEventListener(
+      "offline",
+      updateNetworkStatus
+    );
+  };
+}, []);
+
 
   useEffect(() => {
     if (!sessionId) return;
@@ -250,6 +285,72 @@ export default function SilentSOSClient() {
       setHoldProgress(0);
     }
   }
+
+function sendOfflineEmergencySMS() {
+  if (!location) {
+    setTimeline((old) => [
+      {
+        time: new Date().toLocaleTimeString(),
+        message:
+          "Waiting for GPS before preparing emergency SMS.",
+      },
+      ...old,
+    ]);
+
+    return;
+  }
+
+  const guardian =
+    responders.find(
+      (responder) =>
+        Boolean(responder.guardianPhone)
+    );
+
+  if (!guardian) {
+    setTimeline((old) => [
+      {
+        time: new Date().toLocaleTimeString(),
+        message:
+          "No guardian phone number is available for emergency SMS.",
+      },
+      ...old,
+    ]);
+
+    return;
+  }
+
+  const lat =
+    location.latitude.toFixed(6);
+
+  const lng =
+    location.longitude.toFixed(6);
+
+  const mapsLink =
+    `https://maps.google.com/?q=${lat},${lng}`;
+
+  const message = [
+    "🚨 MYOGUN EMERGENCY",
+    "",
+    "I may be in danger and I currently have no internet connection.",
+    "",
+    `My last known location: ${lat}, ${lng}`,
+    mapsLink,
+    "",
+    "Please contact me or get help immediately.",
+  ].join("\n");
+
+  const phone =
+    guardian.guardianPhone.replace(
+      /[^\d+]/g,
+      ""
+    );
+
+  window.location.href =
+    `sms:${phone}?body=${encodeURIComponent(
+      message
+    )}`;
+}
+
 
   async function stopSOS() {
     if (!engineRef.current) {
@@ -408,6 +509,64 @@ export default function SilentSOSClient() {
         </div>
       )}
     </section>
+
+    {active && !isOnline && (
+  <section className="mt-6 rounded-[2rem] border border-orange-500/40 bg-orange-500/10 p-5">
+    <div className="flex items-start gap-3">
+      <span className="text-3xl">📵</span>
+
+      <div>
+        <p className="text-xs font-black tracking-[0.2em] text-orange-300">
+          OFFLINE EMERGENCY MODE
+        </p>
+
+        <h2 className="mt-2 text-2xl font-black text-white">
+          Internet connection unavailable
+        </h2>
+
+        <p className="mt-2 text-sm leading-6 text-white/70">
+          MyOgun is continuing to track your location
+          on this device. Your emergency will synchronise
+          automatically when internet returns.
+        </p>
+      </div>
+    </div>
+
+    {location && (
+      <div className="mt-4 rounded-2xl bg-black/30 p-4">
+        <p className="text-xs text-white/50">
+          LAST KNOWN LOCATION
+        </p>
+
+        <p className="mt-1 font-bold text-white">
+          {location.latitude.toFixed(6)},{" "}
+          {location.longitude.toFixed(6)}
+        </p>
+
+        {location.accuracy && (
+          <p className="mt-1 text-xs text-white/50">
+            Accuracy approximately{" "}
+            {Math.round(location.accuracy)}m
+          </p>
+        )}
+      </div>
+    )}
+
+    <button
+      type="button"
+      onClick={sendOfflineEmergencySMS}
+      disabled={!location}
+      className="mt-4 w-full rounded-full bg-orange-500 px-5 py-4 font-black text-black disabled:opacity-40"
+    >
+      📱 Send Emergency SMS
+    </button>
+
+    <p className="mt-3 text-center text-xs text-white/50">
+      Opens your phone&apos;s messaging app with your
+      emergency location ready to send.
+    </p>
+  </section>
+)}
 
     <ResponderStatus responders={responders} />
 
