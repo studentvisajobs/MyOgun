@@ -759,6 +759,22 @@ static async acceptInvitation(
           },
         },
 
+        guardianSessions: {
+          where: {
+            status: "ACTIVE",
+          },
+          take: 1,
+          orderBy: {
+            updatedAt: "desc",
+          },
+          select: {
+            batteryLevel: true,
+            networkStatus: true,
+            updatedAt: true,
+          },
+        },
+
+
         safeJourneys: {
           where: {
             status: {
@@ -819,6 +835,9 @@ static async acceptInvitation(
       const location =
         registeredUser?.sharedLocations[0] ?? null;
 
+      const guardianSession =
+        registeredUser?.guardianSessions[0] ?? null;
+
       const journey =
         registeredUser?.safeJourneys[0] ?? null;
 
@@ -850,8 +869,15 @@ static async acceptInvitation(
         longitude: location?.longitude ?? null,
         accuracy: location?.accuracy ?? null,
 
-        batteryLevel: location?.batteryLevel ?? null,
-        networkStatus: location?.status ?? "UNKNOWN",
+          batteryLevel:
+            guardianSession?.batteryLevel ??
+            location?.batteryLevel ??
+            null,
+
+          networkStatus:
+            guardianSession?.networkStatus ??
+            location?.status ??
+            "UNKNOWN",
 
         onJourney: Boolean(journey),
 
