@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
 import {
   MapContainer,
   Marker,
@@ -8,7 +11,7 @@ import {
   TileLayer,
   useMap,
 } from "react-leaflet";
-import L, { LatLngBoundsExpression } from "leaflet";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 type Location = {
@@ -37,6 +40,10 @@ export type MapGuardian = {
 type Props = {
   myLocation: Location | null;
   guardians: MapGuardian[];
+};
+
+type ReverseGeocodeResponse = {
+  display_name?: string;
 };
 
 const userIcon = L.divIcon({
@@ -113,30 +120,191 @@ function createGuardianIcon(
   });
 }
 
-function formatLastSeen(value: string | null) {
-  if (!value) return "Never seen";
+function formatLastSeen(
+  value: string | null
+) {
+  if (!value) {
+    return "Never seen";
+  }
 
-  const milliseconds = Date.now() - new Date(value).getTime();
-  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const date = new Date(value);
 
-  if (seconds < 10) return "Just now";
-  if (seconds < 60) return `${seconds}s ago`;
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
 
-  const minutes = Math.floor(seconds / 60);
+  const milliseconds =
+    Date.now() - date.getTime();
 
-  if (minutes < 60) return `${minutes}m ago`;
+  const seconds = Math.max(
+    0,
+    Math.floor(milliseconds / 1000)
+  );
 
-  const hours = Math.floor(minutes / 60);
+  if (seconds < 10) {
+    return "Just now";
+  }
 
-  if (hours < 24) return `${hours}h ago`;
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+
+  const minutes =
+    Math.floor(seconds / 60);
+
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+
+  const hours =
+    Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
 
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function getPresenceLabel(presence: MapGuardian["presence"]) {
-  if (presence === "ONLINE") return "Online";
-  if (presence === "RECENT") return "Recently active";
+function formatDateTime(
+  value: string | null
+) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return date.toLocaleString();
+}
+
+function getPresenceLabel(
+  presence: MapGuardian["presence"]
+) {
+  if (presence === "ONLINE") {
+    return "Online";
+  }
+
+  if (presence === "RECENT") {
+    return "Recently active";
+  }
+
   return "Offline";
+}
+
+function formatBattery(
+  level: number | null
+) {
+  if (level === null) {
+    return "Unknown";
+  }
+
+  const percentage =
+    level <= 1
+      ? Math.round(level * 100)
+      : Math.round(level);
+
+  return `${percentage}%`;
+}
+
+function GuardianAddress({
+  latitude,
+  longitude,
+}: {
+  latitude: number;
+  longitude: number;
+}) {
+  const [address, setAddress] =
+    useState<string | null>(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  useEffect(() => {
+    const controller =
+      new AbortController();
+
+    async function loadAddress() {
+      setLoading(true);
+      setAddress(null);
+
+      try {
+        const params =
+          new URLSearchParams({
+            format: "jsonv2",
+            lat: String(latitude),
+            lon: String(longitude),
+            zoom: "18",
+            addressdetails: "1",
+          });
+
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?${params.toString()}`,
+          {
+            signal: controller.signal,
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            "Address lookup failed."
+          );
+        }
+
+        const data =
+          (await response.json()) as ReverseGeocodeResponse;
+
+        setAddress(
+          data.display_name ??
+            "Address unavailable"
+        );
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        setAddress(
+          "Address unavailable"
+        );
+      } finally {
+        if (
+          !controller.signal.aborted
+        ) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadAddress();
+
+    return () => {
+      controller.abort();
+    };
+  }, [latitude, longitude]);
+
+  return (
+    <div>
+      <p className="font-bold">
+        Address
+      </p>
+
+      <p className="mt-1 leading-5">
+        {loading
+          ? "Finding address..."
+          : address}
+      </p>
+    </div>
+  );
 }
 
 function AutoFitMap({
@@ -149,12 +317,13 @@ function AutoFitMap({
   const map = useMap();
 
   useEffect(() => {
-    const emergencyGuardian = guardians.find(
-      (guardian) =>
-        guardian.inEmergency &&
-        guardian.latitude !== null &&
-        guardian.longitude !== null
-    );
+    const emergencyGuardian =
+      guardians.find(
+        (guardian) =>
+          guardian.inEmergency &&
+          guardian.latitude !== null &&
+          guardian.longitude !== null
+      );
 
     if (emergencyGuardian) {
       map.setView(
@@ -168,12 +337,14 @@ function AutoFitMap({
       return;
     }
 
-    const onlineGuardian = guardians.find(
-      (guardian) =>
-        guardian.presence === "ONLINE" &&
-        guardian.latitude !== null &&
-        guardian.longitude !== null
-    );
+    const onlineGuardian =
+      guardians.find(
+        (guardian) =>
+          guardian.presence ===
+            "ONLINE" &&
+          guardian.latitude !== null &&
+          guardian.longitude !== null
+      );
 
     if (onlineGuardian) {
       map.setView(
@@ -189,43 +360,234 @@ function AutoFitMap({
 
     if (myLocation) {
       map.setView(
-        [myLocation.latitude, myLocation.longitude],
+        [
+          myLocation.latitude,
+          myLocation.longitude,
+        ],
         15
       );
 
       return;
     }
 
-    if (
-      guardians.length > 0 &&
-      guardians[0].latitude !== null &&
-      guardians[0].longitude !== null
-    ) {
+    const firstGuardian =
+      guardians.find(
+        (guardian) =>
+          guardian.latitude !== null &&
+          guardian.longitude !== null
+      );
+
+    if (firstGuardian) {
       map.setView(
         [
-          guardians[0].latitude as number,
-          guardians[0].longitude as number,
+          firstGuardian.latitude as number,
+          firstGuardian.longitude as number,
         ],
         15
       );
     }
-  }, [map, myLocation, guardians]);
+  }, [
+    map,
+    myLocation,
+    guardians,
+  ]);
 
   return null;
 }
+
+function GuardianMarker({
+  guardian,
+}: {
+  guardian: MapGuardian;
+}) {
+  const map = useMap();
+
+  if (
+    guardian.latitude === null ||
+    guardian.longitude === null
+  ) {
+    return null;
+  }
+
+  const latitude =
+    guardian.latitude;
+
+  const longitude =
+    guardian.longitude;
+
+  function focusGuardian() {
+    map.flyTo(
+      [latitude, longitude],
+      guardian.inEmergency
+        ? 18
+        : 17,
+      {
+        animate: true,
+        duration: 0.8,
+      }
+    );
+  }
+
+  function openDirections() {
+    const url =
+      `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+
+    window.open(
+      url,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
+  return (
+    <Marker
+      position={[
+        latitude,
+        longitude,
+      ]}
+      icon={createGuardianIcon(
+        guardian.presence,
+        guardian.inEmergency,
+        guardian.onJourney
+      )}
+      eventHandlers={{
+        click: focusGuardian,
+      }}
+      riseOnHover
+    >
+      <Popup
+        minWidth={250}
+        maxWidth={320}
+      >
+        <div className="min-w-56">
+          <div>
+            <p className="text-base font-bold">
+              {guardian.name}
+            </p>
+
+            <p className="mt-1 text-sm">
+              {guardian.relation ||
+                "Trusted Guardian"}
+            </p>
+          </div>
+
+          {guardian.inEmergency && (
+            <div className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-xs font-bold text-red-700">
+              🚨 Emergency active
+            </div>
+          )}
+
+          {guardian.onJourney && (
+            <div className="mt-3 rounded-lg bg-yellow-100 px-3 py-2 text-xs font-bold text-yellow-800">
+              🚗 Safe Journey active
+            </div>
+          )}
+
+          <div className="mt-4 border-t border-black/10 pt-3 text-xs">
+            <GuardianAddress
+              latitude={latitude}
+              longitude={longitude}
+            />
+          </div>
+
+          <div className="mt-3 space-y-2 text-xs">
+            <div>
+              <span className="font-bold">
+                Status:
+              </span>{" "}
+              {getPresenceLabel(
+                guardian.presence
+              )}
+            </div>
+
+            <div>
+              <span className="font-bold">
+                Last update:
+              </span>{" "}
+              {formatLastSeen(
+                guardian.lastSeen
+              )}
+            </div>
+
+            <div className="text-[11px] text-gray-500">
+              {formatDateTime(
+                guardian.lastSeen
+              )}
+            </div>
+
+            <div>
+              <span className="font-bold">
+                Battery:
+              </span>{" "}
+              {formatBattery(
+                guardian.batteryLevel
+              )}
+            </div>
+
+            <div>
+              <span className="font-bold">
+                Network:
+              </span>{" "}
+              {guardian.networkStatus &&
+              guardian.networkStatus !==
+                "UNKNOWN"
+                ? guardian.networkStatus
+                : "Unknown"}
+            </div>
+
+            {guardian.accuracy !== null && (
+              <div>
+                <span className="font-bold">
+                  GPS accuracy:
+                </span>{" "}
+                ±
+                {Math.round(
+                  guardian.accuracy
+                )}
+                m
+              </div>
+            )}
+
+            <div>
+              <span className="font-bold">
+                Coordinates:
+              </span>
+
+              <div className="mt-1 font-mono text-[11px]">
+                {latitude.toFixed(6)},{" "}
+                {longitude.toFixed(6)}
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={openDirections}
+            className="mt-4 w-full rounded-lg bg-emerald-500 px-3 py-2.5 text-sm font-bold text-black transition hover:bg-emerald-400"
+          >
+            🧭 Get Directions
+          </button>
+        </div>
+      </Popup>
+    </Marker>
+  );
+}
+
 export default function GuardianCircleMap({
   myLocation,
   guardians,
 }: Props) {
-  const visibleGuardians = guardians.filter(
-  (guardian) =>
-    guardian.sharingLocation &&
-    guardian.latitude !== null &&
-    guardian.longitude !== null
-);
+  const visibleGuardians =
+    guardians.filter(
+      (guardian) =>
+        guardian.sharingLocation &&
+        guardian.latitude !== null &&
+        guardian.longitude !== null
+    );
 
   const hasMapLocation =
-    Boolean(myLocation) || visibleGuardians.length > 0;
+    Boolean(myLocation) ||
+    visibleGuardians.length > 0;
 
   if (!hasMapLocation) {
     return (
@@ -237,7 +599,8 @@ export default function GuardianCircleMap({
             </h2>
 
             <p className="mt-1 text-sm text-white/45">
-              View guardians who are actively sharing their location.
+              View guardians who are actively
+              sharing their location.
             </p>
           </div>
 
@@ -248,15 +611,18 @@ export default function GuardianCircleMap({
 
         <div className="mt-4 flex h-64 items-center justify-center rounded-[2rem] border border-white/10 bg-black/40 text-center">
           <div className="max-w-sm px-6">
-            <p className="text-5xl">📍</p>
+            <p className="text-5xl">
+              📍
+            </p>
 
             <p className="mt-4 font-black">
               No live locations available
             </p>
 
             <p className="mt-2 text-sm leading-6 text-white/50">
-              Start sharing your location or wait for a registered
-              guardian to share theirs.
+              Start sharing your location or
+              wait for a registered guardian
+              to share theirs.
             </p>
           </div>
         </div>
@@ -264,12 +630,19 @@ export default function GuardianCircleMap({
     );
   }
 
-  const initialPosition: [number, number] = myLocation
-    ? [myLocation.latitude, myLocation.longitude]
-    : [
-        visibleGuardians[0].latitude as number,
-        visibleGuardians[0].longitude as number,
-      ];
+  const initialPosition:
+    [number, number] =
+    myLocation
+      ? [
+          myLocation.latitude,
+          myLocation.longitude,
+        ]
+      : [
+          visibleGuardians[0]
+            .latitude as number,
+          visibleGuardians[0]
+            .longitude as number,
+        ];
 
   return (
     <section className="mt-6 rounded-[2rem] border border-white/10 bg-[#111] p-5">
@@ -280,13 +653,19 @@ export default function GuardianCircleMap({
           </h2>
 
           <p className="mt-1 text-sm text-white/45">
-            Locations update automatically with the Guardian Network.
+            Tap a Guardian to zoom to their
+            exact location and view emergency
+            details.
           </p>
         </div>
 
         <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300">
-          {visibleGuardians.length} guardian
-          {visibleGuardians.length === 1 ? "" : "s"} visible
+          {visibleGuardians.length}{" "}
+          guardian
+          {visibleGuardians.length === 1
+            ? ""
+            : "s"}{" "}
+          visible
         </span>
       </div>
 
@@ -294,7 +673,7 @@ export default function GuardianCircleMap({
         <MapContainer
           center={initialPosition}
           zoom={15}
-          scrollWheelZoom={false}
+          scrollWheelZoom
           className="h-80 w-full"
         >
           <TileLayer
@@ -304,7 +683,9 @@ export default function GuardianCircleMap({
 
           <AutoFitMap
             myLocation={myLocation}
-            guardians={visibleGuardians}
+            guardians={
+              visibleGuardians
+            }
           />
 
           {myLocation && (
@@ -317,19 +698,29 @@ export default function GuardianCircleMap({
             >
               <Popup>
                 <div className="min-w-40">
-                  <p className="font-bold">You</p>
+                  <p className="font-bold">
+                    You
+                  </p>
+
                   <p className="mt-1 text-sm">
-                      Your live location
-                    </p>
+                    Your live location
+                  </p>
 
-                    <p className="mt-2 text-xs">
-                      Last updated: {formatLastSeen(myLocation.updatedAt)}
-                    </p>
+                  <p className="mt-2 text-xs">
+                    Last updated:{" "}
+                    {formatLastSeen(
+                      myLocation.updatedAt
+                    )}
+                  </p>
 
-                  {myLocation.accuracy !== null && (
+                  {myLocation.accuracy !==
+                    null && (
                     <p className="mt-1 text-xs">
-                      Accuracy:{" "}
-                      {Math.round(myLocation.accuracy)}m
+                      Accuracy: ±
+                      {Math.round(
+                        myLocation.accuracy
+                      )}
+                      m
                     </p>
                   )}
                 </div>
@@ -337,83 +728,14 @@ export default function GuardianCircleMap({
             </Marker>
           )}
 
-          {visibleGuardians.map((guardian) => (
-            <Marker
-              key={guardian.id}
-              position={[
-                guardian.latitude as number,
-                guardian.longitude as number,
-              ]}
-              icon={createGuardianIcon(
-                guardian.presence,
-                guardian.inEmergency,
-                guardian.onJourney
-              )}
-            >
-              <Popup>
-                <div className="min-w-48">
-                  <p className="font-bold">{guardian.name}</p>
-
-                  <p className="mt-1 text-sm">
-                    {guardian.relation || "Trusted Guardian"}
-                  </p>
-
-                  <div className="mt-3 space-y-1 text-xs">
-                    <p>
-                      Status:{" "}
-                      {getPresenceLabel(guardian.presence)}
-                    </p>
-
-                    <p>
-                      Last seen:{" "}
-                      {formatLastSeen(guardian.lastSeen)}
-                    </p>
-
-                    <p>
-                      Battery:{" "}
-                      {guardian.batteryLevel !== null
-                        ? `${guardian.batteryLevel}%`
-                        : "Unknown"}
-                    </p>
-
-                    <p>
-                      Network:{" "}
-                      {guardian.networkStatus || "Unknown"}
-                    </p>
-
-                    {guardian.accuracy !== null && (
-                      <p>
-                        Accuracy:{" "}
-                        {Math.round(guardian.accuracy)}m
-                      </p>
-                    )}
-
-                    {guardian.onJourney && (
-                      <p>🚗 Safe Journey active</p>
-                    )}
-
-                    {guardian.inEmergency && (
-                      <p>🚨 Emergency active</p>
-                    )}
-                    <div className="mt-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          window.open(
-                            `https://www.google.com/maps/dir/?api=1&destination=${guardian.latitude},${guardian.longitude}`,
-                            "_blank"
-                          );
-                        }}
-                        className="w-full rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-black transition hover:bg-emerald-400"
-                      >
-                        🧭 Get Directions
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+          {visibleGuardians.map(
+            (guardian) => (
+              <GuardianMarker
+                key={guardian.id}
+                guardian={guardian}
+              />
+            )
+          )}
         </MapContainer>
       </div>
 
