@@ -10,17 +10,13 @@ import HomeSafetyIntelligence from "./components/home/HomeSafetyIntelligence";
 export default async function Home() {
   const user = await getCurrentUser();
 
-  const guardians = user
-    ? await prisma.guardianContact.findMany({
-        where: {
-          userId: user.id,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-        take: 4,
-      })
-    : [];
+const guardianCount = user
+  ? await prisma.guardianContact.count({
+      where: {
+        userId: user.id,
+      },
+    })
+  : 0;
 
   const latestIncidents = await prisma.incident.findMany({
     orderBy: {
@@ -78,11 +74,11 @@ export default async function Home() {
       <SafetyStatusHero
         userName={displayName}
         activeAlerts={activeAlerts}
-        guardianCount={guardians.length}
+        guardianCount={guardianCount}
       />
 
       <HomeSafetyIntelligence
-        guardianCount={guardians.length}
+        guardianCount={guardianCount}
         sharingLocation={Boolean(myLocation)}
         emergencyContacts={emergencyContacts}
       />
