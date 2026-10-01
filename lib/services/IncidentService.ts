@@ -105,6 +105,16 @@ export class IncidentService {
       input.longitude
     );
 
+    if (
+      input.latitude === 0 &&
+      input.longitude === 0
+    ) {
+      throw new IncidentServiceError(
+        "A valid incident location is required.",
+        400
+      );
+    }
+
     const incidentType = normalizeIncidentType(
       input.type || "OTHER"
     );
