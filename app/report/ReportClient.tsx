@@ -25,12 +25,21 @@ const initialData: ReportData = {
 };
 
 export default function ReportClient() {
-  const [step, setStep] = useState<ReportStep>("TYPE");
-  const [data, setData] = useState<ReportData>(initialData);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [step, setStep] =
+    useState<ReportStep>("TYPE");
 
-  function updateData(partial: Partial<ReportData>) {
+  const [data, setData] =
+    useState<ReportData>(initialData);
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  function updateData(
+    partial: Partial<ReportData>
+  ) {
     setData((old) => ({
       ...old,
       ...partial,
@@ -42,8 +51,13 @@ export default function ReportClient() {
     setError("");
 
     try {
-      if (data.latitude === null || data.longitude === null) {
-        throw new Error("Location is required before submitting this report.");
+      if (
+        data.latitude === null ||
+        data.longitude === null
+      ) {
+        throw new Error(
+          "Location is required before submitting this report."
+        );
       }
 
       const res = await fetch("/api/incidents", {
@@ -54,13 +68,16 @@ export default function ReportClient() {
         body: JSON.stringify({
           title: data.title,
           description: `${data.description}${
-            data.evidenceNote ? `\n\nEvidence note: ${data.evidenceNote}` : ""
+            data.evidenceNote
+              ? `\n\nEvidence note: ${data.evidenceNote}`
+              : ""
           }`,
           type: data.type,
           latitude: data.latitude,
           longitude: data.longitude,
           area: data.area,
-          localGovernment: data.localGovernment,
+          localGovernment:
+            data.localGovernment,
           isAnonymous: data.isAnonymous,
         }),
       });
@@ -68,24 +85,34 @@ export default function ReportClient() {
       const result = await res.json();
 
       if (!res.ok) {
-        throw new Error(result.error || "Failed to submit report.");
+        throw new Error(
+          result.error ||
+            "Failed to submit report."
+        );
       }
 
-      const incidentId = result.incident?.id || result.id || null;
+      const incidentId =
+        result.incident?.id ||
+        result.id ||
+        null;
 
       if (incidentId) {
         for (const file of data.evidenceFiles) {
-          await fetch("/api/incidents/evidence", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              incidentId,
-              fileUrl: file.fileUrl,
-              mimeType: file.mimeType,
-            }),
-          });
+          await fetch(
+            "/api/incidents/evidence",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify({
+                incidentId,
+                fileUrl: file.fileUrl,
+                mimeType: file.mimeType,
+              }),
+            }
+          );
         }
       }
 
@@ -95,7 +122,11 @@ export default function ReportClient() {
 
       setStep("SUCCESS");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong."
+      );
     } finally {
       setLoading(false);
     }
@@ -104,10 +135,13 @@ export default function ReportClient() {
   return (
     <>
       <section className="rounded-[2rem] border border-emerald-500/20 bg-[#111] p-6">
-        <h2 className="text-2xl font-black">Report & Protect</h2>
+        <h2 className="text-2xl font-black">
+          Report & Protect
+        </h2>
 
         <p className="mt-2 text-sm text-white/60">
-          Add details, location and evidence in one guided flow.
+          Add details, location and evidence
+          in one guided flow.
         </p>
 
         <ProgressBar step={step} />
@@ -122,7 +156,9 @@ export default function ReportClient() {
       {step === "TYPE" && (
         <IncidentTypeStep
           selected={data.type}
-          onSelect={(type) => updateData({ type })}
+          onSelect={(type) =>
+            updateData({ type })
+          }
           onNext={() => setStep("DETAILS")}
         />
       )}
@@ -134,26 +170,58 @@ export default function ReportClient() {
           isAnonymous={data.isAnonymous}
           area={data.area}
           localGovernment={data.localGovernment}
-          setTitle={(title) => updateData({ title })}
-          setDescription={(description) => updateData({ description })}
-          setIsAnonymous={(isAnonymous) => updateData({ isAnonymous })}
-          setArea={(area) => updateData({ area })}
-          setLocalGovernment={(localGovernment) =>
-            updateData({ localGovernment })
+          setTitle={(title) =>
+            updateData({ title })
+          }
+          setDescription={(description) =>
+            updateData({ description })
+          }
+          setIsAnonymous={(
+            isAnonymous
+          ) =>
+            updateData({ isAnonymous })
+          }
+          setArea={(area) =>
+            updateData({ area })
+          }
+          setLocalGovernment={(
+            localGovernment
+          ) =>
+            updateData({
+              localGovernment,
+            })
           }
           onBack={() => setStep("TYPE")}
-          onNext={() => setStep("EVIDENCE")}
+          onNext={() =>
+            setStep("EVIDENCE")
+          }
         />
       )}
 
       {step === "EVIDENCE" && (
         <EvidenceStep
           evidenceNote={data.evidenceNote}
-          evidenceFiles={data.evidenceFiles}
-          setEvidenceNote={(evidenceNote) => updateData({ evidenceNote })}
-          setEvidenceFiles={(evidenceFiles) => updateData({ evidenceFiles })}
-          onBack={() => setStep("DETAILS")}
-          onNext={() => setStep("LOCATION")}
+          evidenceFiles={
+            data.evidenceFiles
+          }
+          setEvidenceNote={(
+            evidenceNote
+          ) =>
+            updateData({ evidenceNote })
+          }
+          setEvidenceFiles={(
+            evidenceFiles
+          ) =>
+            updateData({
+              evidenceFiles,
+            })
+          }
+          onBack={() =>
+            setStep("DETAILS")
+          }
+          onNext={() =>
+            setStep("LOCATION")
+          }
         />
       )}
 
@@ -161,10 +229,22 @@ export default function ReportClient() {
         <LocationStep
           latitude={data.latitude}
           longitude={data.longitude}
-          setLatitude={(latitude) => updateData({ latitude })}
-          setLongitude={(longitude) => updateData({ longitude })}
-          onBack={() => setStep("EVIDENCE")}
-          onNext={() => setStep("REVIEW")}
+          area={data.area}
+          localGovernment={
+            data.localGovernment
+          }
+          setLatitude={(latitude) =>
+            updateData({ latitude })
+          }
+          setLongitude={(longitude) =>
+            updateData({ longitude })
+          }
+          onBack={() =>
+            setStep("EVIDENCE")
+          }
+          onNext={() =>
+            setStep("REVIEW")
+          }
         />
       )}
 
@@ -172,13 +252,19 @@ export default function ReportClient() {
         <ReviewStep
           data={data}
           loading={loading}
-          onBack={() => setStep("LOCATION")}
+          onBack={() =>
+            setStep("LOCATION")
+          }
           onSubmit={submitReport}
         />
       )}
 
       {step === "SUCCESS" && (
-        <SuccessStep incidentId={data.submittedIncidentId} />
+        <SuccessStep
+          incidentId={
+            data.submittedIncidentId
+          }
+        />
       )}
     </>
   );
