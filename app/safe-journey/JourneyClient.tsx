@@ -22,12 +22,24 @@ type TimelineItem = {
   createdAt: string;
 };
 
+type JourneyRoutePoint = {
+  id?: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  speed?: number | null;
+  heading?: number | null;
+  createdAt: string;
+};
+
+
 type ActiveJourney = {
   id: string;
   destination: string;
   estimatedArrival: string | null;
   status: string;
   timeline?: TimelineItem[];
+  locations?: JourneyRoutePoint[];
 };
 
 type BatteryManager = {
@@ -73,15 +85,7 @@ export default function JourneyClient() {
     TimelineItem[]
   >([]);
 
-      type JourneyRoutePoint = {
-      id?: string;
-      latitude: number;
-      longitude: number;
-      accuracy: number | null;
-      speed?: number | null;
-      heading?: number | null;
-      createdAt: string;
-    };
+
 
 const [routePoints, setRoutePoints] = useState<
   JourneyRoutePoint[]
@@ -257,11 +261,13 @@ const [routePoints, setRoutePoints] = useState<
             journey.estimatedArrival
           )
         );
+        
         setStatus(journey.status);
-        setTimeline(journey.timeline || []);
-        setActive(true);
+          setTimeline(journey.timeline || []);
+          setRoutePoints(journey.locations || []);
+          setActive(true);
 
-        beginLocationTracking(journey.id);
+          beginLocationTracking(journey.id);
 
         setMessage(
           "Your active Safe Journey has been restored. Live monitoring has resumed."
