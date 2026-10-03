@@ -34,47 +34,30 @@ export class GuardianEngine {
   }
 
   private timeline(message: string) {
-    this.options.onTimeline(createTimelineEvent(message));
+    this.options.onTimeline(
+      createTimelineEvent(message)
+    );
   }
 
-  async start() {
-    this.options.onStatus("STARTING");
-    this.timeline("Guardian activation started.");
+  private startLocationWatch() {
+    stopGPSWatch(this.watchId);
 
-    const network = getNetworkStatus();
-    this.timeline(`Network status: ${network}.`);
+    this.watchId = watchGPS(
+      async (newLocation) => {
+        this.options.onLocation(newLocation);
 
-    const battery = await getBatteryLevel();
-    this.options.onBattery(battery);
+        const currentBattery =
+          await getBatteryLevel();
 
-    if (battery !== null) {
-      this.timeline(`Battery level: ${battery}%.`);
-    }
+        const currentNetwork =
+          getNetworkStatus();
 
-    try {
-      this.timeline("Requesting GPS location.");
-      const location = await getCurrentGPS();
+        this.options.onBattery(
+          currentBattery
+        );
 
-      this.options.onLocation(location);
-      this.timeline("GPS locked.");
-
-      const session = await startGuardianSession(location, battery, network);
-
-      this.sessionId = session.session.id;
-      this.options.onSession(this.sessionId);
-
-      this.timeline("Guardian session saved to backend.");
-      this.timeline("Live tracking started.");
-
-      this.watchId = watchGPS(
-        async (newLocation) => {
-          this.options.onLocation(newLocation);
-
-          const currentBattery = await getBatteryLevel();
-          const currentNetwork = getNetworkStatus();
-          this.options.onBattery(currentBattery);
-
-          if (this.sessionId) {
+        if (this.sessionId) {
+          try {
             await updateGuardianSession(
               this.sessionId,
               "Location updated.",
@@ -82,13 +65,86 @@ export class GuardianEngine {
               currentBattery,
               currentNetwork
             );
+          } catch (error) {
+            this.timeline(
+              `Location sync failed: ${
+                error instanceof Error
+                  ? error.message
+                  : String(error)
+              }`
+            );
           }
-
-          this.timeline("Location updated.");
-        },
-        (message) => {
-          this.timeline(message);
         }
+
+        this.timeline(
+          "Location updated."
+        );
+      },
+      (message) => {
+        this.timeline(message);
+      }
+    );
+  }
+
+  async start() {
+    this.options.onStatus("STARTING");
+
+    this.timeline(
+      "Guardian activation started."
+    );
+
+    const network =
+      getNetworkStatus();
+
+    this.timeline(
+      `Network status: ${network}.`
+    );
+
+    const battery =
+      await getBatteryLevel();
+
+    this.options.onBattery(battery);
+
+    if (battery !== null) {
+      this.timeline(
+        `Battery level: ${battery}%.`
+      );
+    }
+
+    try {
+      this.timeline(
+        "Requesting GPS location."
+      );
+
+      const location =
+        await getCurrentGPS();
+
+      this.options.onLocation(location);
+
+      this.timeline("GPS locked.");
+
+      const session =
+        await startGuardianSession(
+          location,
+          battery,
+          network
+        );
+
+      this.sessionId =
+        session.session.id;
+
+      this.options.onSession(
+        this.sessionId
+      );
+
+      this.timeline(
+        "Guardian session saved to backend."
+      );
+
+      this.startLocationWatch();
+
+      this.timeline(
+        "Live tracking started."
       );
 
       if (this.sessionId) {
@@ -101,26 +157,115 @@ export class GuardianEngine {
         );
       }
 
-      this.timeline("Guardian Circle ready.");
+      this.timeline(
+        "Guardian Circle ready."
+      );
+
       this.options.onStatus("ACTIVE");
     } catch (error) {
-      this.timeline(String(error));
+      this.timeline(
+        error instanceof Error
+          ? error.message
+          : String(error)
+      );
+
+      this.options.onStatus("ERROR");
+    }
+  }
+
+  async resume(sessionId: string) {
+    if (!sessionId) {
+      this.options.onStatus("ERROR");
+      return;
+    }
+
+    this.options.onStatus("STARTING");
+
+    this.sessionId = sessionId;
+
+    this.options.onSession(
+      this.sessionId
+    );
+
+    this.timeline(
+      "Restoring active Guardian session."
+    );
+
+    const network =
+      getNetworkStatus();
+
+    const battery =
+      await getBatteryLevel();
+
+    this.options.onBattery(battery);
+
+    try {
+      this.timeline(
+        "Restoring live location tracking."
+      );
+
+      const location =
+        await getCurrentGPS();
+
+      this.options.onLocation(location);
+
+      this.timeline("GPS locked.");
+
+      await updateGuardianSession(
+        this.sessionId,
+        "Guardian session restored after reload.",
+        location,
+        battery,
+        network
+      );
+
+      this.startLocationWatch();
+
+      this.timeline(
+        "Live tracking restored."
+      );
+
+      this.options.onStatus("ACTIVE");
+    } catch (error) {
+      this.timeline(
+        error instanceof Error
+          ? error.message
+          : String(error)
+      );
+
+      /*
+       * The backend session still exists.
+       * Do not silently mark it as stopped
+       * just because GPS restoration failed.
+       */
       this.options.onStatus("ERROR");
     }
   }
 
   async stop() {
     stopGPSWatch(this.watchId);
+
     this.watchId = null;
 
     if (this.sessionId) {
-      await stopGuardianSession(this.sessionId);
+      await stopGuardianSession(
+        this.sessionId
+      );
     }
 
-    this.timeline("Guardian stopped safely.");
+    this.timeline(
+      "Guardian stopped safely."
+    );
 
     this.sessionId = null;
+
     this.options.onSession(null);
+
     this.options.onStatus("STOPPED");
+  }
+
+  dispose() {
+    stopGPSWatch(this.watchId);
+    this.watchId = null;
   }
 }
