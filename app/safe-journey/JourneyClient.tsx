@@ -261,7 +261,7 @@ const [routePoints, setRoutePoints] = useState<
             journey.estimatedArrival
           )
         );
-        
+
         setStatus(journey.status);
           setTimeline(journey.timeline || []);
           setRoutePoints(journey.locations || []);
@@ -455,7 +455,7 @@ const [routePoints, setRoutePoints] = useState<
         data.journey.timeline || []
       );
       setMessage(
-        "Check-in recorded. Your guardians can see that you are safe."
+        "✓ Check-in recorded. Your guardians know you're safe. Your journey is still being monitored."
       );
     } catch (error) {
       setMessage(
@@ -759,7 +759,11 @@ async function extendJourney(
             disabled={submitting}
             className="rounded-full bg-blue-500 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            I&apos;m Safe
+            {submitting
+              ? "Checking In..."
+              : status === "CHECKED_IN"
+                ? "✓ Checked In"
+                : "I'm Safe"}
           </button>
 
           <button
