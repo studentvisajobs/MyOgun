@@ -75,10 +75,6 @@ export class GuardianEngine {
             );
           }
         }
-
-        this.timeline(
-          "Location updated."
-        );
       },
       (message) => {
         this.timeline(message);
