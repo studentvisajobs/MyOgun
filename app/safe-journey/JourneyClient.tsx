@@ -300,6 +300,81 @@ const [routePoints, setRoutePoints] = useState<
     };
   }, [beginLocationTracking]);
 
+
+  useEffect(() => {
+  if (
+    !active ||
+    !estimatedArrival ||
+    status === "OVERDUE" ||
+    status === "COMPLETED"
+  ) {
+    return;
+  }
+
+  const checkOverdue = async () => {
+    const arrivalTime = new Date(
+      estimatedArrival
+    ).getTime();
+
+    if (
+      Number.isNaN(arrivalTime) ||
+      Date.now() < arrivalTime
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        "/api/journey/active",
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+      const data = await response.json();
+
+      if (
+        response.ok &&
+        data.journey?.status === "OVERDUE"
+      ) {
+        setStatus("OVERDUE");
+        setTimeline(
+          data.journey.timeline || []
+        );
+        setEstimatedArrival(
+          formatDateTimeLocal(
+            data.journey.estimatedArrival
+          )
+        );
+        setMessage(
+          "Your estimated arrival time has passed. Please confirm that you are safe or extend your journey."
+        );
+      }
+    } catch {
+      // Keep the journey active and try again
+      // on the next interval.
+    }
+  };
+
+  void checkOverdue();
+
+  const interval = window.setInterval(
+    () => {
+      void checkOverdue();
+    },
+    5000
+  );
+
+  return () => {
+    window.clearInterval(interval);
+  };
+}, [
+  active,
+  estimatedArrival,
+  status,
+]);
+
   async function startJourney() {
     const cleanDestination = destination.trim();
 
@@ -339,7 +414,9 @@ const [routePoints, setRoutePoints] = useState<
                 body: JSON.stringify({
                   destination: cleanDestination,
                   estimatedArrival:
-                    estimatedArrival || null,
+                  estimatedArrival
+                    ? new Date(estimatedArrival).toISOString()
+                    : null,
                   latitude:
                     position.coords.latitude,
                   longitude:
