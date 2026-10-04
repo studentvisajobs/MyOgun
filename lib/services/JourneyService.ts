@@ -66,15 +66,16 @@ function validateCoordinates(latitude: number, longitude: number) {
 }
 
 function normalizeBatteryLevel(value?: number | null) {
-  if (value === undefined || value === null) {
+  if (
+    value === undefined ||
+    value === null ||
+    !Number.isFinite(value) ||
+    value <= 0
+  ) {
     return null;
   }
 
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-
-  return Math.max(0, Math.min(100, Math.round(value)));
+  return Math.min(100, Math.round(value));
 }
 
 function normalizeAccuracy(value?: number | null) {
@@ -213,7 +214,9 @@ export class JourneyService {
           latitude: input.latitude,
           longitude: input.longitude,
           accuracy,
-          batteryLevel,
+          ...(batteryLevel !== null
+            ? { batteryLevel }
+            : {}),
           status: networkStatus,
         },
         create: {
@@ -316,7 +319,9 @@ export class JourneyService {
           latitude: input.latitude,
           longitude: input.longitude,
           accuracy,
-          batteryLevel,
+          ...(batteryLevel !== null
+            ? { batteryLevel }
+            : {}),
           status: networkStatus,
         },
         create: {

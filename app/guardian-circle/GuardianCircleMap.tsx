@@ -199,16 +199,15 @@ function getPresenceLabel(
 function formatBattery(
   level: number | null
 ) {
-  if (level === null) {
+  if (
+    level === null ||
+    !Number.isFinite(level) ||
+    level <= 0
+  ) {
     return "Unknown";
   }
 
-  const percentage =
-    level <= 1
-      ? Math.round(level * 100)
-      : Math.round(level);
-
-  return `${percentage}%`;
+  return `${Math.min(100, Math.round(level))}%`;
 }
 
 function GuardianAddress({

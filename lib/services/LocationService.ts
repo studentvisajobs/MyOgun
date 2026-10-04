@@ -67,12 +67,13 @@ function normalizeBatteryLevel(value?: number | null) {
   if (
     value === undefined ||
     value === null ||
-    !Number.isFinite(value)
+    !Number.isFinite(value) ||
+    value <= 0
   ) {
     return null;
   }
 
-  return Math.max(0, Math.min(100, Math.round(value)));
+  return Math.min(100, Math.round(value));
 }
 
 function normalizeNetworkStatus(value?: string | null) {
@@ -159,7 +160,9 @@ export class LocationService {
         latitude: input.latitude,
         longitude: input.longitude,
         accuracy,
-        batteryLevel,
+        ...(batteryLevel !== null
+          ? { batteryLevel }
+          : {}),
         status: networkStatus,
       },
       create: {
