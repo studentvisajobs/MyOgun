@@ -35,7 +35,7 @@ export async function startEmergencySession(
   batteryLevel?: number | null,
   networkStatus?: string
 ) {
-  const response = await fetch("/api/guardian/start", {
+  const response = await fetch("/api/emergency/start", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -61,7 +61,7 @@ export async function updateEmergencySession(
   batteryLevel?: number | null,
   networkStatus?: string
 ) {
-  const response = await fetch("/api/guardian/update", {
+  const response = await fetch("/api/emergency/update", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -85,7 +85,7 @@ export async function updateEmergencySession(
 export async function stopEmergencySession(
   sessionId: string
 ) {
-  const response = await fetch("/api/guardian/stop", {
+  const response = await fetch("/api/emergency/stop", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -102,7 +102,7 @@ export async function stopEmergencySession(
 
 export async function getActiveEmergencySession() {
   const response = await fetch(
-    "/api/guardian/active",
+    "/api/emergency/active",
     {
       method: "GET",
       cache: "no-store",
