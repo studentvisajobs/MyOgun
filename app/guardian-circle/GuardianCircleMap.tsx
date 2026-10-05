@@ -186,14 +186,14 @@ function getPresenceLabel(
   presence: MapGuardian["presence"]
 ) {
   if (presence === "ONLINE") {
-    return "Online";
+    return "Location live";
   }
 
   if (presence === "RECENT") {
-    return "Recently active";
+    return "Recently located";
   }
 
-  return "Offline";
+  return "Location offline";
 }
 
 function formatBattery(

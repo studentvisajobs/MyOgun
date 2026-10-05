@@ -63,9 +63,9 @@ type Props = {
 };
 
 function getPresenceLabel(presence: Presence) {
-  if (presence === "ONLINE") return "Online";
-  if (presence === "RECENT") return "Recently active";
-  return "Offline";
+  if (presence === "ONLINE") return "Location live";
+  if (presence === "RECENT") return "Recently located";
+  return "Location offline";
 }
 
 function getPresenceStyle(presence: Presence) {
@@ -336,7 +336,7 @@ export default function GuardianStatusCard({
             </div>
 
             <div className="rounded-2xl bg-[#111] p-3">
-              <p className="text-white/35">Last seen</p>
+              <p className="text-white/35">Location updated</p>
 
               <p className="mt-1 font-black text-white/75">
                 🕒{" "}
