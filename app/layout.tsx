@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "leaflet/dist/leaflet.css";
 import PushNotificationProvider from "@/app/components/PushNotificationProvider";
-
+import PresenceHeartbeat from "@/app/components/PresenceHeartbeat";
 
 export const metadata: Metadata = {
   title: "MyOgun",
-  description: "Personal Safety, Community Intelligence and Response Centre Platform",
+  description:
+    "Personal Safety, Community Intelligence and Response Centre Platform",
 };
 
 export default function RootLayout({
@@ -17,9 +18,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body>
-      <PushNotificationProvider />
-      {children}
-    </body>
+        <PushNotificationProvider />
+        <PresenceHeartbeat />
+        {children}
+      </body>
     </html>
   );
 }

@@ -15,7 +15,8 @@ model User {
 
   role UserRole @default(USER)
 
-  createdAt DateTime @default(now())
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime?
 
   trustScore       Int @default(50)
   confirmedReports Int @default(0)

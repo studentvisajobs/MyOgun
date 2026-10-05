@@ -740,11 +740,12 @@ static async acceptInvitation(
         },
       },
       select: {
-        id: true,
-        name: true,
-        phone: true,
+      id: true,
+      name: true,
+      phone: true,
+      lastActiveAt: true,
 
-        sharedLocations: {
+      sharedLocations: {
           take: 1,
           orderBy: {
             updatedAt: "desc",
@@ -844,9 +845,14 @@ static async acceptInvitation(
       const emergency =
         registeredUser?.emergencySessions[0] ?? null;
 
-     const presence = LocationService.getPresence(
-        location?.updatedAt
-        );
+     const appPresence = getPresence(
+        registeredUser?.lastActiveAt ?? null
+      );
+
+const locationPresence =
+  LocationService.getPresence(
+    location?.updatedAt
+  );
 
       return {
         id: contact.id,
@@ -860,10 +866,10 @@ static async acceptInvitation(
 
         registered: Boolean(registeredUser),
 
-        online: presence.online,
-        presence: presence.presence,
-        lastSeen: location?.updatedAt ?? null,
-        sharingLocation: presence.sharingLocation,
+        online: appPresence.online,
+        presence: appPresence.presence,
+        lastSeen: registeredUser?.lastActiveAt ?? null,
+        sharingLocation: locationPresence.sharingLocation,
 
         latitude: location?.latitude ?? null,
         longitude: location?.longitude ?? null,
