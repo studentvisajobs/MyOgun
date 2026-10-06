@@ -137,7 +137,7 @@ function formatCoordinates(
 }
 
 function timeAgo(value: string | null) {
-  if (!value) return "Never seen";
+  if (!value) return "Never";
 
   const timestamp = new Date(value).getTime();
 
@@ -177,6 +177,7 @@ export default function GuardianStatusCard({
 
   const presenceStyle = getPresenceStyle(guardian.presence);
 
+  // Guardian exists in the circle but has not registered on MyOgun yet.
   if (!guardian.registered) {
     return (
       <article className="rounded-[2rem] border border-white/10 bg-black/30 p-5">
@@ -217,76 +218,6 @@ export default function GuardianStatusCard({
               </p>
             </div>
 
-<div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-  <div className="rounded-2xl bg-[#111] p-3">
-    <p className="text-white/35">Battery</p>
-
-    <p
-      className={`mt-1 font-black ${getBatteryStyle(
-        guardian.batteryLevel
-      )}`}
-    >
-      🔋 {formatBattery(guardian.batteryLevel)}
-    </p>
-  </div>
-
-  <div className="rounded-2xl bg-[#111] p-3">
-    <p className="text-white/35">Network</p>
-
-    <p
-      className={`mt-1 font-black ${
-        guardian.presence === "ONLINE"
-          ? "text-emerald-300"
-          : "text-white/45"
-      }`}
-    >
-      📶{" "}
-      {guardian.presence === "ONLINE"
-        ? getNetworkLabel(guardian.networkStatus)
-        : "Unknown"}
-    </p>
-  </div>
-
-  <div className="rounded-2xl bg-[#111] p-3">
-    <p className="text-white/35">Last active</p>
-
-    <p className="mt-1 font-black text-white/75">
-      🕒{" "}
-      {mounted
-        ? timeAgo(guardian.lastSeen)
-        : "Checking..."}
-    </p>
-  </div>
-
-  <div className="rounded-2xl bg-[#111] p-3">
-    <p className="text-white/35">Location updated</p>
-
-    <p className="mt-1 font-black text-white/75">
-      📍{" "}
-      {mounted
-        ? timeAgo(guardian.locationUpdatedAt)
-        : "Checking..."}
-    </p>
-  </div>
-
-  <div className="col-span-2 rounded-2xl bg-[#111] p-3">
-    <p className="text-white/35">Location sharing</p>
-
-    <p
-      className={`mt-1 font-black ${
-        guardian.sharingLocation
-          ? "text-emerald-300"
-          : "text-white/45"
-      }`}
-    >
-      📍{" "}
-      {guardian.sharingLocation
-        ? "Active"
-        : "Not sharing"}
-    </p>
-  </div>
-</div>
-
             <Link
               href="/guardian-circle/add"
               className="mt-4 block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-center font-black text-emerald-300 transition hover:bg-emerald-500 hover:text-black"
@@ -299,6 +230,7 @@ export default function GuardianStatusCard({
     );
   }
 
+  // Registered MyOgun guardian.
   return (
     <article
       className={`rounded-[2rem] border p-5 ${
@@ -398,7 +330,7 @@ export default function GuardianStatusCard({
             </div>
 
             <div className="rounded-2xl bg-[#111] p-3">
-              <p className="text-white/35">Location updated</p>
+              <p className="text-white/35">Last active</p>
 
               <p className="mt-1 font-black text-white/75">
                 🕒{" "}
@@ -409,7 +341,22 @@ export default function GuardianStatusCard({
             </div>
 
             <div className="rounded-2xl bg-[#111] p-3">
-              <p className="text-white/35">Location sharing</p>
+              <p className="text-white/35">
+                Location updated
+              </p>
+
+              <p className="mt-1 font-black text-white/75">
+                📍{" "}
+                {mounted
+                  ? timeAgo(guardian.locationUpdatedAt)
+                  : "Checking..."}
+              </p>
+            </div>
+
+            <div className="col-span-2 rounded-2xl bg-[#111] p-3">
+              <p className="text-white/35">
+                Location sharing
+              </p>
 
               <p
                 className={`mt-1 font-black ${
@@ -482,58 +429,58 @@ export default function GuardianStatusCard({
             </div>
           )}
 
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        {guardian.sharingLocation &&
-        guardian.latitude !== null &&
-        guardian.longitude !== null ? (
-          <>
-            <Link
-              href={`/guardian-circle?guardian=${guardian.id}`}
-              className="rounded-full bg-emerald-500 px-4 py-3 text-center text-xs font-black text-black transition hover:bg-emerald-400"
-            >
-              🗺️ Map
-            </Link>
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            {guardian.sharingLocation &&
+            guardian.latitude !== null &&
+            guardian.longitude !== null ? (
+              <>
+                <Link
+                  href={`/guardian-circle?guardian=${guardian.id}`}
+                  className="rounded-full bg-emerald-500 px-4 py-3 text-center text-xs font-black text-black transition hover:bg-emerald-400"
+                >
+                  🗺️ Map
+                </Link>
+
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${guardian.latitude},${guardian.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full border border-blue-500/40 bg-blue-500/10 px-4 py-3 text-center text-xs font-black text-blue-200 transition hover:bg-blue-500 hover:text-white"
+                >
+                  📍 Route
+                </a>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled
+                  className="cursor-not-allowed rounded-full bg-white/5 px-4 py-3 text-xs font-black text-white/30"
+                >
+                  🗺️ N/A
+                </button>
+
+                <button
+                  type="button"
+                  disabled
+                  className="cursor-not-allowed rounded-full bg-white/5 px-4 py-3 text-xs font-black text-white/30"
+                >
+                  📍 N/A
+                </button>
+              </>
+            )}
 
             <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${guardian.latitude},${guardian.longitude}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-full border border-blue-500/40 bg-blue-500/10 px-4 py-3 text-center text-xs font-black text-blue-200 transition hover:bg-blue-500 hover:text-white"
+              href={`tel:${guardian.phone}`}
+              className={`rounded-full border px-4 py-3 text-center text-xs font-black transition ${
+                guardian.inEmergency
+                  ? "border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500 hover:text-white"
+                  : "border-white/10 text-white/70 hover:bg-white/5"
+              }`}
             >
-              📍 Route
+              📞 Call
             </a>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              disabled
-              className="cursor-not-allowed rounded-full bg-white/5 px-4 py-3 text-xs font-black text-white/30"
-            >
-              🗺️ N/A
-            </button>
-
-            <button
-              type="button"
-              disabled
-              className="cursor-not-allowed rounded-full bg-white/5 px-4 py-3 text-xs font-black text-white/30"
-            >
-              📍 N/A
-            </button>
-          </>
-        )}
-
-        <a
-          href={`tel:${guardian.phone}`}
-          className={`rounded-full border px-4 py-3 text-center text-xs font-black transition ${
-            guardian.inEmergency
-              ? "border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500 hover:text-white"
-              : "border-white/10 text-white/70 hover:bg-white/5"
-          }`}
-        >
-          📞 Call
-        </a>
-      </div>
+          </div>
         </div>
       </div>
     </article>
