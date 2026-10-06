@@ -47,6 +47,7 @@ export type GuardianNetworkItem = {
   latitude: number | null;
   longitude: number | null;
   accuracy: number | null;
+  locationUpdatedAt: string | null;
 
   batteryLevel: number | null;
   networkStatus: string;
@@ -216,23 +217,75 @@ export default function GuardianStatusCard({
               </p>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-2xl bg-[#111] p-3">
-                <p className="text-white/35">Phone</p>
+<div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+  <div className="rounded-2xl bg-[#111] p-3">
+    <p className="text-white/35">Battery</p>
 
-                <p className="mt-1 truncate font-bold text-white/75">
-                  {guardian.phone}
-                </p>
-              </div>
+    <p
+      className={`mt-1 font-black ${getBatteryStyle(
+        guardian.batteryLevel
+      )}`}
+    >
+      🔋 {formatBattery(guardian.batteryLevel)}
+    </p>
+  </div>
 
-              <div className="rounded-2xl bg-[#111] p-3">
-                <p className="text-white/35">Status</p>
+  <div className="rounded-2xl bg-[#111] p-3">
+    <p className="text-white/35">Network</p>
 
-                <p className="mt-1 font-bold text-white/55">
-                  Invitation required
-                </p>
-              </div>
-            </div>
+    <p
+      className={`mt-1 font-black ${
+        guardian.presence === "ONLINE"
+          ? "text-emerald-300"
+          : "text-white/45"
+      }`}
+    >
+      📶{" "}
+      {guardian.presence === "ONLINE"
+        ? getNetworkLabel(guardian.networkStatus)
+        : "Unknown"}
+    </p>
+  </div>
+
+  <div className="rounded-2xl bg-[#111] p-3">
+    <p className="text-white/35">Last active</p>
+
+    <p className="mt-1 font-black text-white/75">
+      🕒{" "}
+      {mounted
+        ? timeAgo(guardian.lastSeen)
+        : "Checking..."}
+    </p>
+  </div>
+
+  <div className="rounded-2xl bg-[#111] p-3">
+    <p className="text-white/35">Location updated</p>
+
+    <p className="mt-1 font-black text-white/75">
+      📍{" "}
+      {mounted
+        ? timeAgo(guardian.locationUpdatedAt)
+        : "Checking..."}
+    </p>
+  </div>
+
+  <div className="col-span-2 rounded-2xl bg-[#111] p-3">
+    <p className="text-white/35">Location sharing</p>
+
+    <p
+      className={`mt-1 font-black ${
+        guardian.sharingLocation
+          ? "text-emerald-300"
+          : "text-white/45"
+      }`}
+    >
+      📍{" "}
+      {guardian.sharingLocation
+        ? "Active"
+        : "Not sharing"}
+    </p>
+  </div>
+</div>
 
             <Link
               href="/guardian-circle/add"

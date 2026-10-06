@@ -866,14 +866,15 @@ const locationPresence =
 
         registered: Boolean(registeredUser),
 
-        online: appPresence.online,
-        presence: appPresence.presence,
-        lastSeen: registeredUser?.lastActiveAt ?? null,
-        sharingLocation: locationPresence.sharingLocation,
+      online: appPresence.online,
+      presence: appPresence.presence,
+      lastSeen: registeredUser?.lastActiveAt ?? null,
+      sharingLocation: locationPresence.sharingLocation,
 
-        latitude: location?.latitude ?? null,
-        longitude: location?.longitude ?? null,
-        accuracy: location?.accuracy ?? null,
+      latitude: location?.latitude ?? null,
+      longitude: location?.longitude ?? null,
+      accuracy: location?.accuracy ?? null,
+      locationUpdatedAt: location?.updatedAt ?? null,
 
           batteryLevel:
             guardianSession?.batteryLevel ??
