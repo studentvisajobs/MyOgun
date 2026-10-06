@@ -851,7 +851,8 @@ static async acceptInvitation(
 
 const locationPresence =
   LocationService.getPresence(
-    location?.updatedAt
+    location?.updatedAt,
+    location?.status
   );
 
       return {

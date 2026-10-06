@@ -85,20 +85,29 @@ function normalizeNetworkStatus(value?: string | null) {
 }
 
 export class LocationService {
-  static getPresence(
-    updatedAt: Date | string | null | undefined
-  ): {
-    online: boolean;
-    presence: PresenceStatus;
-    sharingLocation: boolean;
-  } {
-    if (!updatedAt) {
-      return {
-        online: false,
-        presence: "OFFLINE",
-        sharingLocation: false,
-      };
-    }
+static getPresence(
+  updatedAt: Date | string | null | undefined,
+  status?: string | null
+): {
+  online: boolean;
+  presence: PresenceStatus;
+  sharingLocation: boolean;
+} {
+  if (status?.trim().toUpperCase() === "OFFLINE") {
+    return {
+      online: false,
+      presence: "OFFLINE",
+      sharingLocation: false,
+    };
+  }
+
+  if (!updatedAt) {
+    return {
+      online: false,
+      presence: "OFFLINE",
+      sharingLocation: false,
+    };
+  }
 
     const timestamp = new Date(updatedAt).getTime();
 
