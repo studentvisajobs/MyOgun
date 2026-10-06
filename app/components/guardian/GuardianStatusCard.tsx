@@ -63,9 +63,9 @@ type Props = {
 };
 
 function getPresenceLabel(presence: Presence) {
-  if (presence === "ONLINE") return "Location live";
-  if (presence === "RECENT") return "Recently located";
-  return "Location offline";
+  if (presence === "ONLINE") return "Online";
+  if (presence === "RECENT") return "Recently active";
+  return "Offline";
 }
 
 function getPresenceStyle(presence: Presence) {
@@ -330,8 +330,17 @@ export default function GuardianStatusCard({
             <div className="rounded-2xl bg-[#111] p-3">
               <p className="text-white/35">Network</p>
 
-              <p className="mt-1 font-black text-white/75">
-                📶 {getNetworkLabel(guardian.networkStatus)}
+              <p
+                className={`mt-1 font-black ${
+                  guardian.presence === "ONLINE"
+                    ? "text-emerald-300"
+                    : "text-white/45"
+                }`}
+              >
+                📶{" "}
+                {guardian.presence === "ONLINE"
+                  ? getNetworkLabel(guardian.networkStatus)
+                  : "Unknown"}
               </p>
             </div>
 
