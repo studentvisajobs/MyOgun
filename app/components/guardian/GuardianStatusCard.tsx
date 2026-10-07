@@ -93,7 +93,7 @@ function getPresenceStyle(presence: Presence) {
 }
 
 function formatBattery(level: number | null) {
-  if (level === null) return "Unknown";
+  if (level === null) return "Not available";
 
   const percentage =
     level <= 1
