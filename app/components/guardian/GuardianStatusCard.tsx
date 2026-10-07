@@ -437,7 +437,7 @@ useEffect(() => {
 
           <div className="mt-4 rounded-2xl border border-white/10 bg-[#111] p-4">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-white/35">
-              Last known location
+              {guardian.sharingLocation ? "Live location" : "Last known location"}
             </p>
 
             {locationName && (
@@ -558,3 +558,4 @@ useEffect(() => {
     </article>
   );
 }
+
