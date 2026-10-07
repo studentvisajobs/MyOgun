@@ -139,6 +139,8 @@ function formatCoordinates(
 function timeAgo(value: string | null) {
   if (!value) return "Never";
 
+
+
   const timestamp = new Date(value).getTime();
 
   if (Number.isNaN(timestamp)) {
@@ -171,9 +173,69 @@ export default function GuardianStatusCard({
 }: Props) {
   const [mounted, setMounted] = useState(false);
 
+  const [locationName, setLocationName] =
+  useState<string | null>(null);
+
   useEffect(() => {
     setMounted(true);
   }, []);
+
+useEffect(() => {
+  if (
+    guardian.latitude === null ||
+    guardian.longitude === null
+  ) {
+    setLocationName(null);
+    return;
+  }
+
+  const controller = new AbortController();
+
+  async function loadLocationName() {
+    try {
+      const params = new URLSearchParams({
+        lat: String(guardian.latitude),
+        lon: String(guardian.longitude),
+      });
+
+      const response = await fetch(
+        `/api/geocode/reverse?${params.toString()}`,
+        {
+          signal: controller.signal,
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = (await response.json()) as {
+        shortName?: string;
+      };
+
+      if (!controller.signal.aborted) {
+        setLocationName(data.shortName ?? null);
+      }
+    } catch (error) {
+      if (
+        error instanceof DOMException &&
+        error.name === "AbortError"
+      ) {
+        return;
+      }
+
+      setLocationName(null);
+    }
+  }
+
+  void loadLocationName();
+
+  return () => {
+    controller.abort();
+  };
+}, [guardian.latitude, guardian.longitude]);
+
 
   const presenceStyle = getPresenceStyle(guardian.presence);
 
@@ -378,7 +440,17 @@ export default function GuardianStatusCard({
               Last known location
             </p>
 
-            <p className="mt-2 break-words text-sm font-bold text-white/70">
+            {locationName && (
+              <p className="mt-2 text-base font-black text-white">
+                📍 {locationName}
+              </p>
+            )}
+
+            <p
+              className={`break-words text-sm font-bold text-white/70 ${
+                locationName ? "mt-1" : "mt-2"
+              }`}
+            >
               {formatCoordinates(
                 guardian.latitude,
                 guardian.longitude
