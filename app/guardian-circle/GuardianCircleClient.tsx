@@ -476,12 +476,39 @@ useEffect(() => {
 
         <button
           type="button"
-          onClick={() => {
-            if (sharing) {
-              setSharing(false);
+          onClick={async () => {
+          if (sharing) {
+            setSharing(false);
+            setStatusText("Stopping live location sharing...");
+
+            try {
+              const response = await fetch("/api/location/stop", {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+              });
+
+              const data = await response.json();
+
+              if (!response.ok) {
+                setStatusText(
+                  data.error || "Unable to stop location sharing."
+                );
+                return;
+              }
+
+              setLocation(data.location);
               setStatusText("Live location sharing stopped.");
-              return;
+
+              void loadGuardianNetwork();
+            } catch {
+              setStatusText(
+                "Unable to reach server. Check your internet connection."
+              );
             }
+
+            return;
+          }
 
             if (!navigator.geolocation) {
               setStatusText(
