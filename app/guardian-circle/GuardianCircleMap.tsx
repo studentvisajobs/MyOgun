@@ -44,7 +44,7 @@ type Props = {
 };
 
 type ReverseGeocodeResponse = {
-  display_name?: string;
+  displayName?: string;
 };
 
 const userIcon = L.divIcon({
@@ -247,17 +247,13 @@ function GuardianAddress({
       setAddress(null);
 
       try {
-        const params =
-          new URLSearchParams({
-            format: "jsonv2",
-            lat: String(latitude),
-            lon: String(longitude),
-            zoom: "18",
-            addressdetails: "1",
-          });
+        const params = new URLSearchParams({
+          lat: String(latitude),
+          lon: String(longitude),
+        });
 
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?${params.toString()}`,
+          `/api/geocode/reverse?${params.toString()}`,
           {
             signal: controller.signal,
             headers: {
@@ -276,7 +272,7 @@ function GuardianAddress({
           (await response.json()) as ReverseGeocodeResponse;
 
         setAddress(
-          data.display_name ??
+          data.displayName ??
             "Address unavailable"
         );
       } catch (error) {
