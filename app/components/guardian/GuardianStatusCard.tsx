@@ -50,7 +50,9 @@ export type GuardianNetworkItem = {
   locationUpdatedAt: string | null;
 
   batteryLevel: number | null;
+  batteryUpdatedAt: string | null;
   networkStatus: string;
+  networkUpdatedAt: string | null;
 
   onJourney: boolean;
   journey: Journey;
@@ -168,10 +170,30 @@ function timeAgo(value: string | null) {
   return `${days}d ago`;
 }
 
+function isTelemetryFresh(value: string | null) {
+  if (!value) return false;
+
+  const timestamp = new Date(value).getTime();
+
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+
+  const ageMs = Date.now() - timestamp;
+
+  return ageMs >= 0 && ageMs <= 2 * 60 * 1000;
+}
+
 export default function GuardianStatusCard({
   guardian,
 }: Props) {
   const [mounted, setMounted] = useState(false);
+
+  const batteryFresh =
+    mounted && isTelemetryFresh(guardian.batteryUpdatedAt);
+
+  const networkFresh =
+    mounted && isTelemetryFresh(guardian.networkUpdatedAt);
 
   const [locationName, setLocationName] =
   useState<string | null>(null);
@@ -366,11 +388,16 @@ useEffect(() => {
               <p className="text-white/35">Battery</p>
 
               <p
-                className={`mt-1 font-black ${getBatteryStyle(
-                  guardian.batteryLevel
-                )}`}
+                className={`mt-1 font-black ${
+                  batteryFresh
+                    ? getBatteryStyle(guardian.batteryLevel)
+                    : "text-white/45"
+                }`}
               >
-                🔋 {formatBattery(guardian.batteryLevel)}
+                🔋{" "}
+                {batteryFresh
+                  ? formatBattery(guardian.batteryLevel)
+                  : "Not available"}
               </p>
             </div>
 
@@ -379,13 +406,13 @@ useEffect(() => {
 
               <p
                 className={`mt-1 font-black ${
-                  guardian.presence === "ONLINE"
+                  guardian.presence === "ONLINE" && networkFresh
                     ? "text-emerald-300"
                     : "text-white/45"
                 }`}
               >
                 📶{" "}
-                {guardian.presence === "ONLINE"
+                {guardian.presence === "ONLINE" && networkFresh
                   ? getNetworkLabel(guardian.networkStatus)
                   : "Unknown"}
               </p>

@@ -882,10 +882,24 @@ const locationPresence =
             location?.batteryLevel ??
             null,
 
+          batteryUpdatedAt:
+            guardianSession?.batteryLevel != null
+              ? guardianSession.updatedAt
+              : location?.batteryLevel != null
+                ? location.updatedAt
+                : null,
+
           networkStatus:
             guardianSession?.networkStatus ??
             location?.status ??
             "UNKNOWN",
+
+          networkUpdatedAt:
+            guardianSession?.networkStatus != null
+              ? guardianSession.updatedAt
+              : location?.status != null
+                ? location.updatedAt
+                : null,
 
         onJourney: Boolean(journey),
 
