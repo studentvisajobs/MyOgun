@@ -23,7 +23,7 @@ export default function ResponderStatus({ responders }: Props) {
 
       {responders.length === 0 ? (
         <p className="mt-4 text-white/50">
-          Waiting for guardian notifications...
+          No guardian responders assigned yet.
         </p>
       ) : (
         <div className="mt-4 space-y-3">
@@ -42,7 +42,9 @@ export default function ResponderStatus({ responders }: Props) {
                   "bg-white/10 text-white"
                 }`}
               >
-                {guardian.status.replace("_", " ")}
+                {guardian.status === "NOTIFIED"
+                ? "ASSIGNED / ALERT UNVERIFIED"
+                : guardian.status.replace("_", " ")}
               </span>
             </div>
           ))}
