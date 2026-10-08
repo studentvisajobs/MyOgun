@@ -31,6 +31,7 @@ export type MapGuardian = {
   latitude: number | null;
   longitude: number | null;
   accuracy: number | null;
+  locationUpdatedAt: string | null;
   batteryLevel: number | null;
   networkStatus: string;
   onJourney: boolean;
@@ -183,17 +184,31 @@ function formatDateTime(
 }
 
 function getPresenceLabel(
-  presence: MapGuardian["presence"]
+  guardian: MapGuardian
 ) {
-  if (presence === "ONLINE") {
-    return "Location live";
+  if (!guardian.sharingLocation) {
+    return "Location sharing stopped";
   }
 
-  if (presence === "RECENT") {
-    return "Recently located";
+  if (!guardian.locationUpdatedAt) {
+    return "Location update time unknown";
   }
 
-  return "Location offline";
+  const timestamp = new Date(
+    guardian.locationUpdatedAt
+  ).getTime();
+
+  if (!Number.isFinite(timestamp)) {
+    return "Location update time unknown";
+  }
+
+  const ageMs = Date.now() - timestamp;
+
+  if (ageMs >= 0 && ageMs <= 2 * 60 * 1000) {
+    return "Recently updated location";
+  }
+
+  return "Older location record";
 }
 
 function formatBattery(
@@ -495,7 +510,7 @@ function GuardianMarker({
                 Status:
               </span>{" "}
               {getPresenceLabel(
-                guardian.presence
+                guardian
               )}
             </div>
 

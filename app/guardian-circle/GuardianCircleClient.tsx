@@ -556,6 +556,7 @@ useEffect(() => {
     latitude: guardian.latitude,
     longitude: guardian.longitude,
     accuracy: guardian.accuracy,
+    locationUpdatedAt: guardian.locationUpdatedAt,
     batteryLevel: guardian.batteryLevel,
     networkStatus: guardian.networkStatus,
     onJourney: guardian.onJourney,
