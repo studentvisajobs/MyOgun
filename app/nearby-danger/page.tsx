@@ -35,9 +35,9 @@ export default function NearbyDangerPage() {
           return;
         }
 
-        setIncidents(data.nearbyIncidents);
+        setIncidents(data.nearby);
 
-        if (data.nearbyIncidents.length > 0) {
+        if (data.nearby.length > 0) {
           setStatus("🚨 Danger detected nearby.");
 
           if ("vibrate" in navigator) {
