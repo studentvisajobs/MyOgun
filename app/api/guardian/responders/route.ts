@@ -188,6 +188,16 @@ export async function POST(req: Request) {
      * Push failure must not cause the
      * emergency session itself to fail.
      */
+
+    let pushResult = {
+      userCount: guardianUserIds.length,
+      tokenCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      usersWithoutTokens: 0,
+    };
+
+
     if (guardianUserIds.length > 0) {
       const locationText =
         session.latitude !== null &&
@@ -200,7 +210,7 @@ export async function POST(req: Request) {
           : "Location is currently unavailable.";
 
       try {
-        await PushNotificationService.notifyGuardians(
+        pushResult = await PushNotificationService.notifyGuardians(
           guardianUserIds,
           "🚨 MyOgun SOS Emergency",
           `${
@@ -227,8 +237,11 @@ export async function POST(req: Request) {
 
       push: {
         responderCount: responders.length,
-        registeredGuardians:
-          guardianUserIds.length,
+        registeredGuardians: guardianUserIds.length,
+        tokenCount: pushResult.tokenCount,
+        successCount: pushResult.successCount,
+        failureCount: pushResult.failureCount,
+        usersWithoutTokens: pushResult.usersWithoutTokens,
       },
     });
   } catch (error) {
