@@ -760,20 +760,36 @@ static async acceptInvitation(
           },
         },
 
-        guardianSessions: {
-          where: {
-            status: "ACTIVE",
-          },
-          take: 1,
-          orderBy: {
-            updatedAt: "desc",
-          },
-          select: {
-            batteryLevel: true,
-            networkStatus: true,
-            updatedAt: true,
+      guardianSessions: {
+        where: {
+          status: "ACTIVE",
+        },
+        take: 1,
+        orderBy: {
+          updatedAt: "desc",
+        },
+        select: {
+          id: true,
+          latitude: true,
+          longitude: true,
+          batteryLevel: true,
+          networkStatus: true,
+          updatedAt: true,
+
+          locations: {
+            take: 1,
+            orderBy: {
+              createdAt: "desc",
+            },
+            select: {
+              latitude: true,
+              longitude: true,
+              accuracy: true,
+              createdAt: true,
+            },
           },
         },
+      },
 
 
         safeJourneys: {
@@ -839,6 +855,34 @@ static async acceptInvitation(
       const guardianSession =
         registeredUser?.guardianSessions[0] ?? null;
 
+      const emergencyGPS =
+        guardianSession?.locations[0] ?? null;
+
+      const emergencyLocation =
+        emergencyGPS ??
+        (guardianSession?.latitude != null &&
+        guardianSession?.longitude != null
+          ? {
+              latitude: guardianSession.latitude,
+              longitude: guardianSession.longitude,
+              accuracy: null,
+              createdAt: guardianSession.updatedAt,
+            }
+          : null);
+
+      const latestLocation =
+        emergencyLocation &&
+        (!location?.updatedAt ||
+          emergencyLocation.createdAt.getTime() >=
+            location.updatedAt.getTime())
+          ? {
+              latitude: emergencyLocation.latitude,
+              longitude: emergencyLocation.longitude,
+              accuracy: emergencyLocation.accuracy,
+              updatedAt: emergencyLocation.createdAt,
+            }
+          : location;
+
       const journey =
         registeredUser?.safeJourneys[0] ?? null;
 
@@ -872,10 +916,10 @@ const locationPresence =
       lastSeen: registeredUser?.lastActiveAt ?? null,
       sharingLocation: locationPresence.sharingLocation,
 
-      latitude: location?.latitude ?? null,
-      longitude: location?.longitude ?? null,
-      accuracy: location?.accuracy ?? null,
-      locationUpdatedAt: location?.updatedAt ?? null,
+        latitude: latestLocation?.latitude ?? null,
+        longitude: latestLocation?.longitude ?? null,
+        accuracy: latestLocation?.accuracy ?? null,
+        locationUpdatedAt: latestLocation?.updatedAt ?? null,
 
           batteryLevel:
             guardianSession?.batteryLevel ??
