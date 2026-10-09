@@ -1,4 +1,4 @@
-
+﻿
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import AppShell from "./components/layout/AppShell";
@@ -6,6 +6,7 @@ import QuickActions from "./components/home/QuickActions";
 import CommunityFeed from "./components/home/CommunityFeed";
 import MyRecentReportStatus from "./components/home/MyRecentReportStatus";
 import SafetyStatusHero from "./components/home/SafetyStatusHero";
+import EmergencyAutoRefresh from "./components/home/EmergencyAutoRefresh";
 import HomeSafetyIntelligence from "./components/home/HomeSafetyIntelligence";
 
 export default async function Home() {
@@ -120,6 +121,7 @@ export default async function Home() {
 
   return (
     <AppShell>
+      <EmergencyAutoRefresh />
       <SafetyStatusHero
         userName={displayName}
         activeAlerts={activeAlerts}
@@ -148,3 +150,4 @@ export default async function Home() {
     </AppShell>
   );
 }
+
