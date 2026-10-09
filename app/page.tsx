@@ -66,16 +66,32 @@ const guardianCount = user
       })
     : 0;
 
+const activeEmergency = user
+  ? await prisma.guardianSession.findFirst({
+      where: {
+        userId: user.id,
+        status: "ACTIVE",
+      },
+      orderBy: {
+        startedAt: "desc",
+      },
+      select: {
+        id: true,
+      },
+    })
+  : null;
+
   const displayName =
     user?.name?.split(" ")[0] || "there";
 
   return (
     <AppShell>
-      <SafetyStatusHero
-        userName={displayName}
-        activeAlerts={activeAlerts}
-        guardianCount={guardianCount}
-      />
+    <SafetyStatusHero
+      userName={displayName}
+      activeAlerts={activeAlerts}
+      guardianCount={guardianCount}
+      emergencyActive={Boolean(activeEmergency)}
+    />
 
       <HomeSafetyIntelligence
         guardianCount={guardianCount}
