@@ -70,25 +70,37 @@ export default async function Home() {
 
   // Find users who have explicitly accepted this
   // logged-in user as their guardian.
-  const acceptedInvitations = user
-    ? await prisma.guardianInvitation.findMany({
-        where: {
-          receiverId: user.id,
-          status: "ACCEPTED",
-        },
-        select: {
-          senderId: true,
-        },
-      })
-    : [];
+// An accepted Guardian Invitation creates mutual protection.
+// Both sender and receiver can monitor each other's emergencies.
+const acceptedInvitations = user
+  ? await prisma.guardianInvitation.findMany({
+      where: {
+        status: "ACCEPTED",
+        OR: [
+          { senderId: user.id },
+          { receiverId: user.id },
+        ],
+      },
+      select: {
+        senderId: true,
+        receiverId: true,
+      },
+    })
+  : [];
 
-  const protectedUserIds = [
-    ...new Set(
-      acceptedInvitations
-        .map((invitation) => invitation.senderId)
-        .filter((id) => id !== user?.id)
-    ),
-  ];
+const protectedUserIds = [
+  ...new Set(
+    acceptedInvitations
+      .map((invitation) =>
+        invitation.senderId === user?.id
+          ? invitation.receiverId
+          : invitation.senderId
+      )
+      .filter((id): id is string =>
+        Boolean(id) && id !== user?.id
+      )
+  ),
+];
 
   // Detect active emergency sessions for
   // authorised Guardian Circle connections.
