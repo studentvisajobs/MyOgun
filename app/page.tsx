@@ -92,16 +92,23 @@ export default async function Home() {
 
   // Detect active emergency sessions for
   // authorised Guardian Circle connections.
+
+  // Check both emergency systems for accepted Guardian
+  // Network connections.
   const guardianEmergency =
     protectedUserIds.length > 0
-      ? await prisma.guardianSession.findFirst({
+      ? await prisma.emergencySession.findFirst({
           where: {
             userId: {
               in: protectedUserIds,
             },
-            status: "ACTIVE",
+            status: {
+              in: ["ACTIVE", "MONITORING", "RESPONDING"],
+            },
           },
-          orderBy: { startedAt: "desc" },
+          orderBy: {
+            startedAt: "desc",
+          },
           select: {
             userId: true,
             user: {
@@ -113,11 +120,40 @@ export default async function Home() {
         })
       : null;
 
+  // Some emergency flows may use GuardianSession
+  // without an EmergencySession.
+  const guardianSessionEmergency =
+    !guardianEmergency && protectedUserIds.length > 0
+      ? await prisma.guardianSession.findFirst({
+          where: {
+            userId: {
+              in: protectedUserIds,
+            },
+            status: "ACTIVE",
+          },
+          orderBy: {
+            startedAt: "desc",
+          },
+          select: {
+            userId: true,
+            user: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        })
+      : null;
+
+  const connectedEmergency =
+    guardianEmergency ?? guardianSessionEmergency;
+
+
   const displayName =
     user?.name?.split(" ")[0] || "there";
 
-  const guardianEmergencyName =
-    guardianEmergency?.user?.name || "Your guardian contact";
+const guardianEmergencyName =
+  connectedEmergency?.user?.name || "Your guardian contact";
 
   return (
     <AppShell>
@@ -128,7 +164,7 @@ export default async function Home() {
         guardianCount={guardianCount}
         emergencyActive={Boolean(activeEmergency)}
         guardianEmergencyName={
-          guardianEmergency
+          connectedEmergency
             ? guardianEmergencyName
             : null
         }
