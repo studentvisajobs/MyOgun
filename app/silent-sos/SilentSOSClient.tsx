@@ -85,7 +85,7 @@ export default function SilentSOSClient() {
 
     engineRef.current =
       new EmergencyEngine({
-        mode: "SOS",
+        mode: "SILENT_SOS",
 
         onTimeline: (item) =>
           setTimeline((old) => [

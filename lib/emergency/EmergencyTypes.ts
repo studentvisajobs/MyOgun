@@ -1,4 +1,9 @@
-export type EmergencyMode = "GUARDIAN" | "SOS" | "SAFE_JOURNEY" | "AI_MONITOR";
+export type EmergencyMode =
+  | "GUARDIAN"
+  | "SOS"
+  | "SILENT_SOS"
+  | "SAFE_JOURNEY"
+  | "AI_MONITOR";
 
 export type EmergencyStatus =
   | "READY"
