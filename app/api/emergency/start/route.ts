@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { NotificationService } from "@/lib/notifications/NotificationService";
 import {
   EmergencySessionService,
   EmergencySessionServiceError,
@@ -84,6 +86,57 @@ export async function POST(req: Request) {
               ? body.network
               : null,
       });
+
+    // Notify both sides of accepted Guardian Network connections.
+    // Notification failures must not cancel an active emergency.
+    try {
+      const invitations = await prisma.guardianInvitation.findMany({
+        where: {
+          status: "ACCEPTED",
+          OR: [
+            { senderId: user.id },
+            { receiverId: user.id },
+          ],
+        },
+        select: {
+          senderId: true,
+          receiverId: true,
+        },
+      });
+
+      const guardianIds = Array.from(
+        new Set(
+          invitations
+            .map((invitation) =>
+              invitation.senderId === user.id
+                ? invitation.receiverId
+                : invitation.senderId
+            )
+            .filter(
+              (id): id is string =>
+                Boolean(id) && id !== user.id
+            )
+        )
+      );
+
+      if (guardianIds.length > 0) {
+        const pushResult = await NotificationService.notifyGuardians(
+          guardianIds,
+          "MyOgun Emergency Alert",
+          `${user.name || "Your guardian contact"} has activated an emergency alert. Open MyOgun immediately.`
+        );
+
+        console.info("Emergency guardian push results:", {
+          sessionId: session.id,
+          ...pushResult,
+        });
+      }
+    } catch (notificationError) {
+      console.error(
+        "Emergency guardian notification error:",
+        notificationError
+      );
+    }
 
     return NextResponse.json({
       success: true,
