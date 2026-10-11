@@ -870,19 +870,48 @@ static async acceptInvitation(
             }
           : null);
 
-      const latestLocation =
-        emergencyLocation &&
-        (!location?.updatedAt ||
-          emergencyLocation.createdAt.getTime() >=
-            location.updatedAt.getTime())
-          ? {
-              latitude: emergencyLocation.latitude,
-              longitude: emergencyLocation.longitude,
-              accuracy: emergencyLocation.accuracy,
-              updatedAt: emergencyLocation.createdAt,
-            }
-          : location;
+      const activeEmergency =
+        registeredUser?.emergencySessions[0] ?? null;
 
+      const emergencySessionLocation =
+        activeEmergency?.latitude != null &&
+        activeEmergency?.longitude != null &&
+        Number.isFinite(activeEmergency.latitude) &&
+        Number.isFinite(activeEmergency.longitude) &&
+        Math.abs(activeEmergency.latitude) <= 90 &&
+        Math.abs(activeEmergency.longitude) <= 180
+          ? {
+              latitude: activeEmergency.latitude,
+              longitude: activeEmergency.longitude,
+              accuracy: null,
+              updatedAt: activeEmergency.startedAt,
+            }
+          : null;
+
+      const guardianGPSLocation = emergencyLocation
+        ? {
+            latitude: emergencyLocation.latitude,
+            longitude: emergencyLocation.longitude,
+            accuracy: emergencyLocation.accuracy,
+            updatedAt: emergencyLocation.createdAt,
+          }
+        : null;
+
+      const latestLocation = [
+        location,
+        guardianGPSLocation,
+        emergencySessionLocation,
+      ]
+        .filter(
+          (candidate): candidate is NonNullable<typeof candidate> =>
+            candidate != null &&
+            candidate.latitude != null &&
+            candidate.longitude != null
+        )
+        .sort(
+          (a, b) =>
+            b.updatedAt.getTime() - a.updatedAt.getTime()
+        )[0] ?? null;
       const journey =
         registeredUser?.safeJourneys[0] ?? null;
 
