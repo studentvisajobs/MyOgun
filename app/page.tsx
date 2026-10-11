@@ -1,8 +1,9 @@
-﻿
+
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import AppShell from "./components/layout/AppShell";
 import QuickActions from "./components/home/QuickActions";
+import SilentSOSClient from "./silent-sos/SilentSOSClient";
 import CommunityFeed from "./components/home/CommunityFeed";
 import MyRecentReportStatus from "./components/home/MyRecentReportStatus";
 import SafetyStatusHero from "./components/home/SafetyStatusHero";
@@ -181,6 +182,8 @@ const guardianEmergencyName =
             : null
         }
       />
+
+      <SilentSOSClient compact />
 
       <HomeSafetyIntelligence
         guardianCount={guardianCount}

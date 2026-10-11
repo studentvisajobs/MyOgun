@@ -20,7 +20,11 @@ type OfflineGuardianContact = {
   phone: string;
 };
 
-export default function SilentSOSClient() {
+export default function SilentSOSClient({
+  compact = false,
+}: {
+  compact?: boolean;
+}) {
   const [active, setActive] = useState(false);
   const [seconds, setSeconds] = useState(0);
 
@@ -71,6 +75,7 @@ export default function SilentSOSClient() {
 
   const activatedRef =
     useRef(false);
+  const [resuming, setResuming] = useState(true);
 
   useEffect(() => {
     setTimeline([
@@ -166,7 +171,7 @@ export default function SilentSOSClient() {
         },
       });
 
-    void engineRef.current.resume();
+    void engineRef.current.resume().finally(() => setResuming(false));
 
     return () => {
       engineRef.current?.dispose();
@@ -448,78 +453,59 @@ export default function SilentSOSClient() {
     )}`;
   }
 
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current) {
+        clearInterval(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
+    };
+  }, []);
   function clearHoldTimer() {
-    if (
-      holdTimerRef.current
-    ) {
-      clearInterval(
-        holdTimerRef.current
-      );
-
-      holdTimerRef.current =
-        null;
+    if (holdTimerRef.current) {
+      clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
     }
   }
 
   function startHold() {
-    if (
-      active ||
+    if (      active ||
+      resuming ||
+      status === "STARTING" ||
+      activatedRef.current ||
       holdTimerRef.current
     ) {
       return;
     }
 
-    activatedRef.current =
-      false;
-
+    activatedRef.current = false;
     setHoldProgress(0);
 
-    holdTimerRef.current =
-      setInterval(() => {
-        setHoldProgress(
-          (prev) => {
-            const next =
-              prev + 4;
+    let progress = 0;
 
-            if (
-              next >= 100 &&
-              !activatedRef.current
-            ) {
-              activatedRef.current =
-                true;
+    holdTimerRef.current = setInterval(() => {
+      progress = Math.min(progress + 4, 100);
+      setHoldProgress(progress);
 
-              clearHoldTimer();
+      if (progress >= 100 && !activatedRef.current) {
+        activatedRef.current = true;
+        clearHoldTimer();
 
-              setTimeout(
-                async () => {
-                  setSeconds(0);
-                  setStartedAt(null);
+        setSeconds(0);
+        setStartedAt(null);
 
-                  await engineRef.current?.start();
-                },
-                0
-              );
-
-              return 100;
-            }
-
-            return next;
-          }
-        );
-      }, 100);
+        void engineRef.current?.start();
+      }
+    }, 100);
   }
 
   function cancelHold() {
     clearHoldTimer();
 
-    if (
-      !active &&
-      !activatedRef.current
-    ) {
+    if (!active && !activatedRef.current) {
       setHoldProgress(0);
     }
   }
-
   const liveGuardian =
     responders.find(
       (responder) =>
@@ -642,6 +628,77 @@ export default function SilentSOSClient() {
     }
   }
 
+  if (compact) {
+    return (
+      <section className="rounded-3xl border border-red-500/40 bg-red-950/30 p-5 text-center shadow-lg">
+        <p className="text-sm font-bold uppercase tracking-widest text-red-300">
+          Emergency SOS
+        </p>
+
+        <p className="mt-2 text-sm text-white/70">
+          {resuming
+              ? "Checking for an existing emergency..."
+              : active && !isOnline
+                ? "Offline SOS active. Guardian notification is not confirmed. Open the emergency dashboard to prepare an SMS."
+                : active
+                  ? "SOS active. Open the emergency dashboard to check alert delivery and responders."
+                  : status === "STARTING"
+                    ? "Activating emergency protection..."
+                    : "Hold SOS for 2.5 seconds to request emergency help."}
+        </p>
+
+        <div className="mt-5 flex justify-center">
+          <button
+            type="button"
+            disabled={active || resuming}
+            onPointerDown={startHold}
+            onPointerUp={cancelHold}
+            onKeyDown={(event) => {
+              if (
+                (event.key === " " || event.key === "Enter") &&
+                !event.repeat
+              ) {
+                event.preventDefault();
+                startHold();
+              }
+            }}
+            onKeyUp={(event) => {
+              if (event.key === " " || event.key === "Enter") {
+                event.preventDefault();
+                cancelHold();
+              }
+            }}
+            onPointerCancel={cancelHold}
+            onPointerLeave={cancelHold}
+            onContextMenu={(event) => event.preventDefault()}
+            className={`flex h-36 w-36 touch-none select-none items-center justify-center rounded-full border-4 border-white/30 text-3xl font-black text-white shadow-xl ${
+              active
+                ? "bg-red-900"
+                : "bg-red-600 active:scale-95"
+            }`}
+          >
+            {active ? "ACTIVE" : "SOS"}
+          </button>
+        </div>
+
+        {!active && (
+          <div className="mx-auto mt-4 h-2 max-w-xs overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full bg-red-500 transition-all"
+              style={{ width: `${holdProgress}%` }}
+            />
+          </div>
+        )}
+
+        <a
+          href="/silent-sos"
+          className="mt-5 inline-block text-sm font-semibold text-red-300 underline"
+        >
+          {active ? "Open emergency dashboard" : "View Silent SOS details"}
+        </a>
+      </section>
+    );
+  }
   return (
     <>
       <section className="rounded-[2rem] border border-red-500/30 bg-red-500/10 p-6 text-center shadow-2xl">

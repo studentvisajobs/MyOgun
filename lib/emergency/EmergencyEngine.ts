@@ -511,7 +511,7 @@ export class EmergencyEngine {
 
       if (
         !session ||
-        session.status !== "ACTIVE"
+        !["ACTIVE", "MONITORING", "RESPONDING"].includes(session.status)
       ) {
         return false;
       }
