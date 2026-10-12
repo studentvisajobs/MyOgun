@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import JourneyStatusCard from "@/app/components/journey/JourneyStatusCard";
+import EditGuardianForm from "./EditGuardianForm";
 
 type Presence = "ONLINE" | "RECENT" | "OFFLINE";
 
@@ -188,6 +189,7 @@ export default function GuardianStatusCard({
   guardian,
 }: Props) {
   const [mounted, setMounted] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const batteryFresh =
     mounted && isTelemetryFresh(guardian.batteryUpdatedAt);
@@ -280,6 +282,26 @@ useEffect(() => {
                 <p className="mt-1 text-sm text-white/45">
                   {guardian.relation || "Trusted Guardian"}
                 </p>
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setEditing((value) => !value)}
+                className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-5 py-2 text-sm font-black text-emerald-300"
+              >
+                {editing ? "Close Edit" : "Edit Guardian"}
+              </button>
+
+              {editing && (
+                <EditGuardianForm
+                  guardian={guardian}
+                  onSaved={() => {
+                    setEditing(false);
+                    window.location.reload();
+                  }}
+                  onCancel={() => setEditing(false)}
+                />
+              )}
+            </div>
               </div>
 
               {guardian.isPrimary && (
@@ -382,6 +404,26 @@ useEffect(() => {
           <p className="mt-3 text-sm text-white/45">
             {guardian.relation || "Trusted Guardian"}
           </p>
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setEditing((value) => !value)}
+                className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-5 py-2 text-sm font-black text-emerald-300"
+              >
+                {editing ? "Close Edit" : "Edit Guardian"}
+              </button>
+
+              {editing && (
+                <EditGuardianForm
+                  guardian={guardian}
+                  onSaved={() => {
+                    setEditing(false);
+                    window.location.reload();
+                  }}
+                  onCancel={() => setEditing(false)}
+                />
+              )}
+            </div>
 
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-2xl bg-[#111] p-3">

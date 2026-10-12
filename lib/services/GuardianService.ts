@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+﻿import { prisma } from "@/lib/prisma";
 import { LocationService } from "@/lib/services/LocationService";
 import { NotificationService as PushNotificationService } from "@/lib/notifications/NotificationService";
 
@@ -172,6 +172,63 @@ export class GuardianService {
     });
   }
 
+  static async updateGuardian(input: {
+    userId: string;
+    guardianId: string;
+    name: string;
+    email?: string | null;
+    relation?: string | null;
+    isPrimary: boolean;
+  }) {
+    const name = input.name.trim();
+
+    if (!name) {
+      throw new GuardianServiceError(
+        "Guardian name is required.",
+        400
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const guardian = await tx.guardianContact.findFirst({
+        where: {
+          id: input.guardianId,
+          userId: input.userId,
+        },
+      });
+
+      if (!guardian) {
+        throw new GuardianServiceError(
+          "Guardian not found.",
+          404
+        );
+      }
+
+      if (input.isPrimary) {
+        await tx.guardianContact.updateMany({
+          where: {
+            userId: input.userId,
+            isPrimary: true,
+          },
+          data: {
+            isPrimary: false,
+          },
+        });
+      }
+
+      return tx.guardianContact.update({
+        where: {
+          id: guardian.id,
+        },
+        data: {
+          name,
+          email: cleanOptionalText(input.email),
+          relation: cleanOptionalText(input.relation),
+          isPrimary: input.isPrimary,
+        },
+      });
+    });
+  }
   static async removeGuardian(input: RemoveGuardianInput) {
     const guardian =
       await prisma.guardianContact.findFirst({
@@ -358,7 +415,7 @@ export class GuardianService {
       await PushNotificationService.notifyUser(
         receiverUser.id,
 
-        "👥 Guardian Invitation",
+        "ðŸ‘¥ Guardian Invitation",
 
         `${
           input.senderName ||
@@ -584,7 +641,7 @@ static async acceptInvitation(
   try {
     await PushNotificationService.notifyUser(
       invitation.senderId,
-      "✅ Guardian Invitation Accepted",
+      "âœ… Guardian Invitation Accepted",
       `${
         input.receiverName || receiverPhone
       } accepted your Guardian invitation.`
