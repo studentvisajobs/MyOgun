@@ -190,6 +190,46 @@ export default function GuardianStatusCard({
 }: Props) {
   const [mounted, setMounted] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  async function deleteGuardian() {
+    if (deleting) return;
+
+    const confirmed = window.confirm(
+      `Delete ${guardian.name} from your Guardian Circle? This will disconnect the guardian relationship and stop future alerts through that connection.`
+    );
+
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setDeleteError("");
+
+    try {
+      const response = await fetch(
+        `/api/guardian-circle/${encodeURIComponent(guardian.id)}`,
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to delete guardian.");
+      }
+
+      window.location.reload();
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete guardian."
+      );
+      setDeleting(false);
+    }
+  }
 
   const batteryFresh =
     mounted && isTelemetryFresh(guardian.batteryUpdatedAt);
@@ -288,8 +328,23 @@ useEffect(() => {
                 onClick={() => setEditing((value) => !value)}
                 className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-5 py-2 text-sm font-black text-emerald-300"
               >
-                {editing ? "Close Edit" : "Edit Guardian"}
+                              {editing ? "Close Edit" : "Edit Guardian"}
               </button>
+
+              <button
+                type="button"
+                onClick={() => void deleteGuardian()}
+                disabled={deleting}
+                className="ml-2 rounded-full border border-red-500/40 bg-red-500/10 px-5 py-2 text-sm font-black text-red-300 transition hover:bg-red-500 hover:text-white disabled:opacity-50"
+              >
+                {deleting ? "Deleting..." : "Delete Guardian"}
+              </button>
+
+              {deleteError && (
+                <p role="alert" className="mt-2 text-sm text-red-300">
+                  {deleteError}
+                </p>
+              )}
 
               {editing && (
                 <EditGuardianForm
@@ -410,8 +465,23 @@ useEffect(() => {
                 onClick={() => setEditing((value) => !value)}
                 className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-5 py-2 text-sm font-black text-emerald-300"
               >
-                {editing ? "Close Edit" : "Edit Guardian"}
+                              {editing ? "Close Edit" : "Edit Guardian"}
               </button>
+
+              <button
+                type="button"
+                onClick={() => void deleteGuardian()}
+                disabled={deleting}
+                className="ml-2 rounded-full border border-red-500/40 bg-red-500/10 px-5 py-2 text-sm font-black text-red-300 transition hover:bg-red-500 hover:text-white disabled:opacity-50"
+              >
+                {deleting ? "Deleting..." : "Delete Guardian"}
+              </button>
+
+              {deleteError && (
+                <p role="alert" className="mt-2 text-sm text-red-300">
+                  {deleteError}
+                </p>
+              )}
 
               {editing && (
                 <EditGuardianForm

@@ -358,12 +358,21 @@ useEffect(() => {
             </h2>
           </div>
 
-          <Link
-            href="/guardian-invitations"
-            className="shrink-0 rounded-full border border-emerald-500/30 bg-black/20 px-4 py-2 text-xs font-black text-emerald-300"
-          >
-            Invitations
-          </Link>
+          <div className="flex flex-wrap gap-2">
+  <Link
+    href="/guardian-circle/add"
+    className="rounded-full bg-emerald-500 px-4 py-3 text-center text-xs font-black text-black transition hover:bg-emerald-400"
+  >
+    ADD GUARDIAN
+  </Link>
+
+  <Link
+    href="/guardian-invitations"
+    className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-center text-xs font-black text-emerald-300 transition hover:bg-emerald-500 hover:text-black"
+  >
+    ACCEPT GUARDIAN
+  </Link>
+</div>
         </div>
 
         <div className="mt-5 grid grid-cols-3 gap-3">

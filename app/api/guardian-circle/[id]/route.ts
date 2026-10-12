@@ -69,3 +69,51 @@ export async function PATCH(
     );
   }
 }
+export async function DELETE(
+  _req: Request,
+  context: Context
+) {
+  try {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "You must be logged in." },
+        { status: 401 }
+      );
+    }
+
+    const { id } = await context.params;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Guardian ID is required." },
+        { status: 400 }
+      );
+    }
+
+    await GuardianService.removeGuardian({
+      userId: user.id,
+      guardianId: id,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Guardian removed successfully.",
+    });
+  } catch (error) {
+    console.error("Delete Guardian error:", error);
+
+    if (error instanceof GuardianServiceError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+
+    return NextResponse.json(
+      { error: "Failed to delete guardian." },
+      { status: 500 }
+    );
+  }
+}

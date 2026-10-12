@@ -1,4 +1,4 @@
-﻿import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { LocationService } from "@/lib/services/LocationService";
 import { NotificationService as PushNotificationService } from "@/lib/notifications/NotificationService";
 
@@ -230,36 +230,59 @@ export class GuardianService {
     });
   }
   static async removeGuardian(input: RemoveGuardianInput) {
-    const guardian =
-      await prisma.guardianContact.findFirst({
+    return prisma.$transaction(async (tx) => {
+      const guardian = await tx.guardianContact.findFirst({
         where: {
           id: input.guardianId,
           userId: input.userId,
         },
         select: {
           id: true,
+          phone: true,
         },
       });
 
-    if (!guardian) {
-      throw new GuardianServiceError(
-        "Guardian not found.",
-        404
-      );
-    }
+      if (!guardian) {
+        throw new GuardianServiceError("Guardian not found.", 404);
+      }
 
-    await prisma.guardianContact.delete({
-      where: {
-        id: guardian.id,
-      },
+      const guardianPhone = normalizePhone(guardian.phone);
+
+      const registeredUser = await tx.user.findFirst({
+        where: {
+          phone: guardianPhone,
+          id: { not: input.userId },
+        },
+        select: { id: true },
+      });
+
+      if (registeredUser) {
+        await tx.guardianInvitation.updateMany({
+          where: {
+            status: "ACCEPTED",
+            OR: [
+              {
+                senderId: input.userId,
+                receiverId: registeredUser.id,
+              },
+              {
+                senderId: registeredUser.id,
+                receiverId: input.userId,
+              },
+            ],
+          },
+          data: { status: "REJECTED" },
+        });
+      }
+
+      await tx.guardianContact.delete({
+        where: { id: guardian.id },
+      });
+
+      return { success: true };
     });
-
-    return {
-      success: true,
-    };
   }
-
- static async sendInvitation(
+static async sendInvitation(
   input: SendInvitationInput
 ) {
   const receiverName = input.receiverName.trim();
