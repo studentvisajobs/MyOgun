@@ -61,7 +61,7 @@ export default function EmergencyContactsPage() {
           Add trusted phone numbers to be alerted when SOS is triggered.
         </p>
 
-        <div className="mt-8 space-y-4 rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+        <div id="add-contact" className="mt-8 scroll-mt-8 space-y-4 rounded-3xl border border-white/10 bg-white/[0.04] p-6">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -86,7 +86,7 @@ export default function EmergencyContactsPage() {
           {status && <p className="text-sm text-white/60">{status}</p>}
         </div>
 
-        <div className="mt-8 space-y-4">
+        <div id="manage-contacts" className="mt-8 scroll-mt-8 space-y-4">
           {contacts.map((contact) => (
             <div
               key={contact.id}

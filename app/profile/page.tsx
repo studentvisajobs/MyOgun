@@ -55,13 +55,20 @@ export default async function ProfilePage() {
         </Link>
 
         <Link
-          href="/emergency-contacts"
-          className="block rounded-[2rem] border border-white/10 bg-[#121212] p-5 transition hover:border-emerald-500/40"
+          href="/emergency-contacts#add-contact"
+          className="block rounded-[2rem] border border-emerald-500/20 bg-emerald-500/10 p-5 font-bold transition hover:border-emerald-500/40"
         >
-          🚑 Emergency Information
+          Add Emergency Contact
         </Link>
 
-        <LogoutButton />
+        <Link
+          href="/emergency-contacts#manage-contacts"
+          className="block rounded-[2rem] border border-white/10 bg-[#121212] p-5 font-bold transition hover:border-emerald-500/40"
+        >
+          Manage Emergency Contacts
+        </Link>
+
+        <div className="pt-4 pb-12"><LogoutButton /></div>
       </div>
     </MobilePage>
   );

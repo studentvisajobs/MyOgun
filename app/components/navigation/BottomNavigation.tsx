@@ -22,7 +22,7 @@ const items = [
   },
   {
     href: "/profile",
-    label: "Me",
+    label: "My Account",
     icon: "👤",
   },
 ];
