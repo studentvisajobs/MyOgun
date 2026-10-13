@@ -531,21 +531,7 @@ export default function SilentSOSClient({
       : null;
 
   function sendOfflineEmergencySMS() {
-    if (!location) {
-      setTimeline((old) => [
-        {
-          time: new Date().toLocaleTimeString(),
-          message:
-            "Waiting for GPS before preparing emergency SMS.",
-        },
-        ...old,
-      ]);
-
-      return;
-    }
-
-    const guardianPhone =
-      emergencyGuardian?.phone;
+    const guardianPhone = emergencyGuardian?.phone;
 
     if (!guardianPhone) {
       setTimeline((old) => [
@@ -556,46 +542,69 @@ export default function SilentSOSClient({
         },
         ...old,
       ]);
-
       return;
     }
 
-    const lat =
-      location.latitude.toFixed(
-        6
-      );
+    const phone = guardianPhone.replace(/[^\d+]/g, "");
 
-    const lng =
-      location.longitude.toFixed(
-        6
-      );
+    if (!phone) {
+      setTimeline((old) => [
+        {
+          time: new Date().toLocaleTimeString(),
+          message: "Guardian phone number is invalid.",
+        },
+        ...old,
+      ]);
+      return;
+    }
 
-    const mapsLink =
-      `https://maps.google.com/?q=${lat},${lng}`;
-
-    const message = [
-      "🚨 MYOGUN EMERGENCY",
+    const messageLines = [
+      "MYOGUN EMERGENCY SOS",
       "",
-      "I may be in danger and I currently have no internet connection.",
+      "I may be in danger and need immediate assistance.",
       "",
-      `My last known location: ${lat}, ${lng}`,
-      mapsLink,
-      "",
-      "Please contact me or get help immediately.",
-    ].join("\n");
+    ];
 
-    const phone =
-      guardianPhone.replace(
-        /[^\d+]/g,
+    if (
+      location &&
+      Number.isFinite(location.latitude) &&
+      Number.isFinite(location.longitude)
+    ) {
+      const lat = location.latitude.toFixed(6);
+      const lng = location.longitude.toFixed(6);
+
+      messageLines.push(
+        `Last available location: ${lat}, ${lng}`,
+        `https://maps.google.com/?q=${lat},${lng}`,
         ""
       );
+    } else {
+      messageLines.push(
+        "My location is currently unavailable.",
+        "Please contact me to establish my location.",
+        ""
+      );
+    }
+
+    messageLines.push(
+      "Please contact me or seek emergency assistance immediately.",
+      "Prepared using MyOgun emergency SMS."
+    );
+
+    const message = messageLines.join("\n");
+
+    setTimeline((old) => [
+      {
+        time: new Date().toLocaleTimeString(),
+        message:
+          "Opening SMS app. Press Send to notify your guardian.",
+      },
+      ...old,
+    ]);
 
     window.location.href =
-      `sms:${phone}?body=${encodeURIComponent(
-        message
-      )}`;
+      `sms:${phone}?body=${encodeURIComponent(message)}`;
   }
-
   async function stopSOS() {
     if (
       !engineRef.current
@@ -981,10 +990,7 @@ export default function SilentSOSClient({
               onClick={
                 sendOfflineEmergencySMS
               }
-              disabled={
-                !location ||
-                !emergencyGuardian
-              }
+              disabled={!emergencyGuardian}
               className="mt-4 w-full rounded-full bg-orange-500 px-5 py-4 font-black text-black disabled:opacity-40"
             >
               📱 Send
