@@ -98,8 +98,55 @@ export default function SilentSOSClient({
             ...old,
           ]),
 
-        onLocation: (loc) =>
-          setLocation(loc),
+        onLocation: (loc) => {
+          setLocation(loc);
+
+          if (
+            Number.isFinite(loc.latitude) &&
+            Number.isFinite(loc.longitude) &&
+            loc.latitude >= -90 &&
+            loc.latitude <= 90 &&
+            loc.longitude >= -180 &&
+            loc.longitude <= 180 &&
+    typeof loc.timestamp === "number" &&
+    Number.isFinite(loc.timestamp) &&
+    loc.timestamp > 0 &&
+    loc.timestamp <= Date.now()
+          ) {
+            try {
+              const key = "myogun_last_known_sos_location";
+              const previous = localStorage.getItem(key);
+              let previousTime = 0;
+
+              if (previous) {
+                try {
+                  const parsed = JSON.parse(previous);
+                  const parsedTime = Date.parse(parsed?.savedAt);
+                  if (Number.isFinite(parsedTime)) {
+                    previousTime = parsedTime;
+                  }
+                } catch {
+                  // Invalid previous cache; allow replacement.
+                }
+              }
+
+              if (loc.timestamp <= previousTime) {
+                return;
+              }
+
+              localStorage.setItem(
+                key,
+                JSON.stringify({
+                  latitude: loc.latitude,
+                  longitude: loc.longitude,
+                  savedAt: new Date(loc.timestamp).toISOString(),
+                })
+              );
+            } catch {
+              // Storage unavailable; live SOS continues.
+            }
+          }
+        },
 
         onBattery: (level) =>
           setBattery(level),
@@ -558,6 +605,35 @@ export default function SilentSOSClient({
       return;
     }
 
+    let savedLocation: {
+      latitude: number;
+      longitude: number;
+      savedAt: string;
+    } | null = null;
+
+    try {
+      const raw = localStorage.getItem(
+        "myogun_last_known_sos_location"
+      );
+      if (raw) {
+        const value = JSON.parse(raw);
+        const time = Date.parse(value?.savedAt);
+        if (
+          typeof value?.latitude === "number" &&
+          typeof value?.longitude === "number" &&
+          Number.isFinite(value.latitude) &&
+          Number.isFinite(value.longitude) &&
+          Math.abs(value.latitude) <= 90 &&
+          Math.abs(value.longitude) <= 180 &&
+          Number.isFinite(time) &&
+          time <= Date.now()
+        ) {
+          savedLocation = value;
+        }
+      }
+    } catch {
+      // Continue without a saved location.
+    }
     const messageLines = [
       "MYOGUN EMERGENCY SOS",
       "",
@@ -565,19 +641,35 @@ export default function SilentSOSClient({
       "",
     ];
 
-    if (
-      location &&
+    const validLive =
+      location !== null &&
       Number.isFinite(location.latitude) &&
-      Number.isFinite(location.longitude)
-    ) {
-      const lat = location.latitude.toFixed(6);
-      const lng = location.longitude.toFixed(6);
+      Number.isFinite(location.longitude) &&
+      Math.abs(location.latitude) <= 90 &&
+      Math.abs(location.longitude) <= 180;
+
+    const coordinates = savedLocation ?? (validLive ? location : null);
+
+    if (coordinates) {
+      const lat = coordinates.latitude.toFixed(6);
+      const lng = coordinates.longitude.toFixed(6);
 
       messageLines.push(
         `Last available location: ${lat}, ${lng}`,
-        `https://maps.google.com/?q=${lat},${lng}`,
-        ""
+        `https://maps.google.com/?q=${lat},${lng}`
       );
+
+      if (savedLocation && coordinates === savedLocation) {
+        messageLines.push(
+          `Location recorded: ${savedLocation.savedAt}`,
+          "WARNING: Last recorded location only. Current position is not confirmed."
+        );
+      } else {
+        messageLines.push(
+          "WARNING: Location timestamp unavailable. Current position is not confirmed."
+        );
+      }
+      messageLines.push("");
     } else {
       messageLines.push(
         "My location is currently unavailable.",

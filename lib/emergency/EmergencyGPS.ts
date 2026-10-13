@@ -13,6 +13,7 @@ export function getEmergencyGPS(): Promise<EmergencyLocation> {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy: position.coords.accuracy,
+          timestamp: position.timestamp,
         });
       },
       () => {
@@ -41,6 +42,7 @@ export function watchEmergencyGPS(
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracy: position.coords.accuracy,
+          timestamp: position.timestamp,
       });
     },
     () => {
