@@ -10,11 +10,6 @@ const items = [
     icon: "🏠",
   },
   {
-    href: "/protect",
-    label: "Protect",
-    icon: "🛡️",
-  },
-  {
     href: "/report",
     label: "",
     icon: "➕",

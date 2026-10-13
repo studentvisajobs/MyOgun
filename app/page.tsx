@@ -1,4 +1,6 @@
 
+import Link from "next/link";
+import LogoutButton from "./profile/LogoutButton";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import AppShell from "./components/layout/AppShell";
@@ -171,6 +173,50 @@ const guardianEmergencyName =
   return (
     <AppShell>
       <EmergencyAutoRefresh />
+
+      <section className="mx-4 mt-4 rounded-2xl border border-emerald-500/20 bg-[#101814] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-black text-emerald-400">
+              MyOgun Account
+            </p>
+            <p className="mt-1 text-xs text-white/60">
+              {user
+                ? "Manage your account and safety settings."
+                : "Join MyOgun to connect with your guardians."}
+            </p>
+          </div>
+
+          {user ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/profile"
+                className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-bold text-black"
+              >
+                My Account
+              </Link>
+              <div className="[&>button]:mt-0 [&>button]:w-auto [&>button]:px-4 [&>button]:py-2 [&>button]:text-xs">
+                <LogoutButton />
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/login"
+                className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-bold text-black"
+              >
+                Sign Up
+              </Link>
+              <Link
+                href="/login"
+                className="rounded-full border border-emerald-500/40 px-4 py-2 text-xs font-bold text-white"
+              >
+                Sign In
+              </Link>
+            </div>
+          )}
+        </div>
+      </section>
       <SafetyStatusHero
         userName={displayName}
         activeAlerts={activeAlerts}

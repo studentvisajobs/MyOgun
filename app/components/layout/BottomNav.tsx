@@ -9,11 +9,6 @@ export default function BottomNav() {
           Home
         </Link>
 
-        <Link href="/guardian-mode" className="flex flex-col items-center gap-1">
-          <span className="text-xl">🛡️</span>
-          Protect
-        </Link>
-
         <Link
           href="/report"
           className="-mt-8 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-3xl font-black text-black shadow-xl shadow-emerald-500/30"
@@ -28,7 +23,7 @@ export default function BottomNav() {
 
         <Link href="/profile" className="flex flex-col items-center gap-1">
           <span className="text-xl">👤</span>
-          Me
+          My Account
         </Link>
       </div>
     </nav>
