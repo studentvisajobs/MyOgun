@@ -96,9 +96,9 @@ export default async function ProfilePage() {
             href="/emergency-contacts#manage-contacts"
             className={card}
           >
-            <p className="font-bold">View Emergency Contacts →</p>
+            <p className="font-bold">Manage Emergency Contacts →</p>
             <p className="mt-1 text-sm text-white/50">
-              See your saved emergency contacts.
+              View and organise your saved emergency contacts.
             </p>
           </Link>
         </section>
@@ -111,3 +111,4 @@ export default async function ProfilePage() {
     </MobilePage>
   );
 }
+
