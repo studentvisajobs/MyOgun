@@ -16,7 +16,7 @@ export default function MobilePage({
   showBack = true,
 }: MobilePageProps) {
   return (
-    <main className="min-h-screen bg-black px-6 pb-28 pt-8 text-white">
+    <main className="min-h-screen bg-black px-6 pb-44 pt-8 text-white">
       <div className="mx-auto max-w-md">
         {showBack && (
           <Link
