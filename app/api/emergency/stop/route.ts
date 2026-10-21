@@ -19,9 +19,16 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = await req.json();
+      const body = await req.json().catch(() => null);
 
-    const sessionId =
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return NextResponse.json(
+          { success: false, error: "Invalid request body." },
+          { status: 400 }
+        );
+      }
+
+      const sessionId =
       typeof body.sessionId === "string"
         ? body.sessionId.trim()
         : "";

@@ -1,9 +1,28 @@
+
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import {
-  EmergencySessionService,
-  EmergencySessionServiceError,
-} from "@/lib/services/EmergencySessionService";
+  GuardianSessionError,
+  GuardianSessionService,
+} from "@/lib/services/GuardianSessionService";
+
+function optionalNumber(value: unknown): number | null {
+  if (
+    value === undefined ||
+    value === null ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return null;
+  }
+
+  if (typeof value !== "number" && typeof value !== "string") {
+    return NaN;
+  }
+
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : NaN;
+}
 
 export async function POST(req: Request) {
   try {
@@ -11,15 +30,19 @@ export async function POST(req: Request) {
 
     if (!user) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Login required.",
-        },
+        { error: "You must be logged in." },
         { status: 401 }
       );
     }
 
     const body = await req.json();
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "Invalid request body." },
+        { status: 400 }
+      );
+    }
 
     const sessionId =
       typeof body.sessionId === "string"
@@ -28,84 +51,98 @@ export async function POST(req: Request) {
 
     if (!sessionId) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Session ID is required.",
-        },
+        { error: "Session ID is required." },
         { status: 400 }
       );
     }
 
-    const message =
-      typeof body.message === "string" &&
-      body.message.trim()
-        ? body.message.trim()
-        : "Emergency session updated.";
+    const latitude = optionalNumber(body.latitude);
+    const longitude = optionalNumber(body.longitude);
+    const accuracy = optionalNumber(body.accuracy);
+    const batteryLevel = optionalNumber(body.batteryLevel);
 
-    const session =
-      await EmergencySessionService.update({
-        userId: user.id,
-        sessionId,
-        message,
+    if (
+      (latitude !== null &&
+        (!Number.isFinite(latitude) ||
+          latitude < -90 ||
+          latitude > 90)) ||
+      (longitude !== null &&
+        (!Number.isFinite(longitude) ||
+          longitude < -180 ||
+          longitude > 180))
+    ) {
+      return NextResponse.json(
+        { error: "Invalid GPS coordinates." },
+        { status: 400 }
+      );
+    }
 
-        latitude:
-          body.latitude === undefined ||
-          body.latitude === null
-            ? null
-            : Number(body.latitude),
+    if (
+      accuracy !== null &&
+      (!Number.isFinite(accuracy) || accuracy < 0)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid GPS accuracy." },
+        { status: 400 }
+      );
+    }
 
-        longitude:
-          body.longitude === undefined ||
-          body.longitude === null
-            ? null
-            : Number(body.longitude),
+    if (
+      batteryLevel !== null &&
+      (!Number.isFinite(batteryLevel) ||
+        batteryLevel < 0 ||
+        batteryLevel > 100)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid battery level." },
+        { status: 400 }
+      );
+    }
 
-        batteryLevel:
-          body.batteryLevel === undefined ||
-          body.batteryLevel === null
-            ? body.battery === undefined ||
-              body.battery === null
-              ? null
-              : Number(body.battery)
-            : Number(body.batteryLevel),
+    const activeSession =
+      await GuardianSessionService.getActive(user.id);
 
+    if (!activeSession || activeSession.id !== sessionId) {
+      return NextResponse.json(
+        { error: "Active Guardian session not found." },
+        { status: 404 }
+      );
+    }
+
+    const session = await GuardianSessionService.update(
+      sessionId,
+      {
+        latitude,
+        longitude,
+        accuracy,
+        batteryLevel,
         networkStatus:
           typeof body.networkStatus === "string"
             ? body.networkStatus
-            : typeof body.network === "string"
-              ? body.network
-              : null,
-      });
+            : null,
+        message:
+          typeof body.message === "string" && body.message.trim()
+            ? body.message.trim()
+            : "Guardian location updated.",
+      }
+    );
 
     return NextResponse.json({
       success: true,
       session,
     });
   } catch (error) {
-    console.error(
-      "Emergency update error:",
-      error
-    );
-
-    if (
-      error instanceof
-      EmergencySessionServiceError
-    ) {
+    if (error instanceof GuardianSessionError) {
       return NextResponse.json(
-        {
-          success: false,
-          error: error.message,
-        },
+        { error: error.message },
         { status: error.status }
       );
     }
 
+    console.error("Guardian update error:", error);
+
     return NextResponse.json(
-      {
-        success: false,
-        error:
-          "Failed to update emergency session.",
-      },
+      { error: "Failed to update Guardian session." },
       { status: 500 }
     );
   }

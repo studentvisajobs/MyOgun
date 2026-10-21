@@ -31,6 +31,9 @@ export type EmergencyEngineOptions = {
   onTimeline: (item: EmergencyTimelineItem) => void;
   onLocation: (location: EmergencyLocation) => void;
   onBattery: (battery: number | null) => void;
-  onSession: (sessionId: string | null) => void;
+  onSession: (
+  sessionId: string | null,
+  guardianSessionId?: string | null
+  ) => void;
   onStartedAt?: (startedAt: string | null) => void;
 };

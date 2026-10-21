@@ -266,6 +266,7 @@ model GuardianSession {
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   status GuardianSessionStatus @default(ACTIVE)
+  guardianModeEnabled Boolean @default(false)
 
   startedAt DateTime  @default(now())
   stoppedAt DateTime?
@@ -284,6 +285,7 @@ model GuardianSession {
   evidence         EmergencyEvidence[]
   acknowledgements GuardianAcknowledgement[]
   responders       EmergencyResponder[]
+  linkedEmergencies EmergencySession[] @relation("EmergencyGuardianSession")
 }
 
 model GuardianLocation {
@@ -437,6 +439,7 @@ model EmergencyResponder {
 
   @@index([sessionId])
   @@index([guardianContactId])
+  @@unique([sessionId, guardianContactId])
 }
 
 model SharedLocation {
@@ -547,6 +550,10 @@ model Notification {
   channel NotificationChannel
 
   isRead Boolean @default(false)
+  pushStatus    String    @default("PENDING")
+  pushAttempts  Int       @default(0)
+  lastAttemptAt DateTime?
+  pushSentAt    DateTime?
 
   incidentId  String?
   journeyId   String?
@@ -557,6 +564,7 @@ model Notification {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@unique([userId, emergencyId, channel])
 }
 
 enum NotificationChannel {
@@ -611,6 +619,10 @@ model EmergencySession {
   evidence Evidence[]
 
   timeline EmergencyTimeline[]
+  guardianSessionId String?
+  guardianSession   GuardianSession? @relation("EmergencyGuardianSession", fields: [guardianSessionId], references: [id], onDelete: SetNull)
+
+  ownsGuardianSession Boolean @default(false)
 }
 
 model EmergencyTimeline {

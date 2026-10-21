@@ -18,6 +18,7 @@ type TimelineItem = {
 type ActiveSession = {
   id: string;
   status: string;
+  guardianModeEnabled: boolean;
   createdAt?: string;
   startedAt?: string;
 };
@@ -162,7 +163,8 @@ export default function GuardianModeClient() {
         if (
           cancelled ||
           !response.ok ||
-          !data.session
+          !data.session ||
+          !data.session.guardianModeEnabled
         ) {
           return;
         }
