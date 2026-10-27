@@ -201,6 +201,7 @@ model OtpCode {
   code      String
   expiresAt DateTime
   used      Boolean  @default(false)
+    attempts  Int      @default(0)
   createdAt DateTime @default(now())
 
   @@index([phone])
@@ -649,4 +650,14 @@ enum EmergencyStatus {
   RESPONDING
   SAFE
   CLOSED
+}
+
+model OtpRateLimit {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([windowStart])
 }

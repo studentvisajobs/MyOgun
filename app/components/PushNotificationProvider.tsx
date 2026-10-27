@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { getToken } from "firebase/messaging";
+import { getToken } from "@firebase/messaging";
 import { messaging } from "@/lib/firebase/client";
 
 export default function PushNotificationProvider() {
