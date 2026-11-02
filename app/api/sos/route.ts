@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 
 import { NotificationService as DatabaseNotificationService } from "@/lib/services/NotificationService";
 import { NotificationService as PushNotificationService } from "@/lib/notifications/NotificationService";
+import { GuardianRecipientService } from "@/lib/services/GuardianRecipientService";
 
 export async function POST(req: Request) {
   try {
@@ -18,16 +19,32 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    const latitude = Number(body.latitude);
-    const longitude = Number(body.longitude);
+    const latitude =
+      typeof body.latitude === "number"
+        ? body.latitude
+        : null;
 
-    const safeLatitude = Number.isFinite(latitude)
-      ? latitude
-      : null;
+    const longitude =
+      typeof body.longitude === "number"
+        ? body.longitude
+        : null;
 
-    const safeLongitude = Number.isFinite(longitude)
-      ? longitude
-      : null;
+    const safeLatitude =
+      latitude !== null &&
+      Number.isFinite(latitude) &&
+      latitude >= -90 &&
+      latitude <= 90
+        ? latitude
+        : null;
+
+    const safeLongitude =
+      longitude !== null &&
+      Number.isFinite(longitude) &&
+      longitude >= -180 &&
+      longitude <= 180
+        ? longitude
+        : null;
+
 
     const message =
       typeof body.message === "string" &&
@@ -59,69 +76,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const acceptedInvitations =
-      await prisma.guardianInvitation.findMany({
-        where: {
-          senderId: user.id,
-          status: "ACCEPTED",
-          receiverId: {
-            not: null,
-          },
-        },
-        select: {
-          receiverId: true,
-        },
-      });
-
-    const guardianContacts =
-      await prisma.guardianContact.findMany({
-        where: {
-          userId: user.id,
-        },
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-          email: true,
-        },
-      });
-
-    const contactPhones = guardianContacts.map(
-      (contact) => contact.phone
-    );
-
-    const guardianUsersByPhone =
-      contactPhones.length > 0
-        ? await prisma.user.findMany({
-            where: {
-              phone: {
-                in: contactPhones,
-              },
-            },
-            select: {
-              id: true,
-            },
-          })
-        : [];
-
-    const guardianUserIds = Array.from(
-      new Set([
-        ...acceptedInvitations
-          .map(
-            (invitation) =>
-              invitation.receiverId
-          )
-          .filter(
-            (
-              receiverId
-            ): receiverId is string =>
-              Boolean(receiverId)
-          ),
-
-        ...guardianUsersByPhone.map(
-          (guardian) => guardian.id
-        ),
-      ])
+  const guardianUserIds =
+    await GuardianRecipientService.getAuthorizedGuardianIds(
+      user.id
     );
 
     const locationText =
@@ -154,8 +111,7 @@ export async function POST(req: Request) {
       sos,
       guardiansMatched:
         guardianUserIds.length,
-      contactsFound:
-        guardianContacts.length,
+      contactsFound: guardianUserIds.length,
     });
   } catch (error) {
     console.error("SOS error:", error);

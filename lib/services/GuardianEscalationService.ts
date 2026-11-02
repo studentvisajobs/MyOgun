@@ -1,4 +1,7 @@
+
 import { prisma } from "@/lib/prisma";
+import { GuardianRecipientService } from "@/lib/services/GuardianRecipientService";
+import { EmergencyNotificationService } from "@/lib/notifications/EmergencyNotificationService";
 
 export type GuardianEscalationResult = {
   checked: number;
@@ -10,59 +13,142 @@ export class GuardianEscalationService {
 
   static async run(): Promise<GuardianEscalationResult> {
     const cutoff = new Date(
-      Date.now() -
-        this.GRACE_PERIOD_MINUTES * 60 * 1000
+      Date.now() - this.GRACE_PERIOD_MINUTES * 60 * 1000
     );
 
-    const journeys =
-      await prisma.safeJourney.findMany({
-        where: {
-          status: "OVERDUE",
-          updatedAt: {
-            lte: cutoff,
+    const journeys = await prisma.safeJourney.findMany({
+      where: {
+        status: "OVERDUE",
+        OR: [
+          {
+            updatedAt: { lte: cutoff },
+            escalatedAt: null,
           },
-          escalatedAt: null,
-        },
-        select: {
-          id: true,
-        },
-      });
+          {
+            escalatedAt: { not: null },
+          },
+        ],
+      },
+      select: {
+        id: true,
+        userId: true,
+        destination: true,
+        escalatedAt: true,
+      },
+    });
 
     let escalated = 0;
 
     for (const journey of journeys) {
-      const result = await prisma.$transaction(
-        async (tx) => {
-          const updated =
-            await tx.safeJourney.updateMany({
-              where: {
-                id: journey.id,
-                status: "OVERDUE",
-                escalatedAt: null,
-              },
-              data: {
-                escalatedAt: new Date(),
-              },
-            });
+      if (!journey.userId) {
+        continue;
+      }
 
-          if (updated.count === 0) {
-            return false;
-          }
+      try {
+        const guardianIds =
+          await GuardianRecipientService.getAuthorizedGuardianIds(
+            journey.userId
+          );
 
-          await tx.safeJourneyTimeline.create({
+        if (guardianIds.length === 0) {
+          continue;
+        }
+
+        // Confirm the journey is still overdue before preparing alerts.
+        const currentJourney = await prisma.safeJourney.findFirst({
+          where: {
+            id: journey.id,
+            status: "OVERDUE",
+          },
+          select: {
+            id: true,
+            escalatedAt: true,
+          },
+        });
+
+        if (!currentJourney) {
+          continue;
+        }
+
+        const title = "MyOgun Safe Journey Alert";
+        const message =
+          `A MyOgun user's journey to ${journey.destination} ` +
+          "is overdue. Please check on them immediately.";
+
+
+        if (!currentJourney.escalatedAt) {
+          const updated = await prisma.safeJourney.updateMany({
+            where: {
+              id: journey.id,
+              status: "OVERDUE",
+              escalatedAt: null,
+            },
             data: {
-              journeyId: journey.id,
-              message:
-                "Journey escalated to guardians after the grace period.",
+              escalatedAt: new Date(),
             },
           });
 
-          return true;
-        }
-      );
+          if (updated.count > 0) {
+            escalated++;
 
-      if (result) {
-        escalated += 1;
+            await prisma.safeJourneyTimeline.create({
+              data: {
+                journeyId: journey.id,
+                message:
+                  "Overdue journey escalation initiated. Guardian notifications queued.",
+              },
+            });
+          }
+        }
+
+      // Recheck the journey and retrieve its saved escalation timestamp.
+      const stillOverdue = await prisma.safeJourney.findFirst({
+        where: {
+          id: journey.id,
+          status: "OVERDUE",
+        },
+        select: {
+          id: true,
+          escalatedAt: true,
+        },
+      });
+
+    if (!stillOverdue?.escalatedAt) {
+      continue;
+    }
+
+    const escalationCycleId = stillOverdue.escalatedAt.toISOString();
+
+            for (const guardianId of guardianIds) {
+              try {
+                const notification =
+                  await EmergencyNotificationService.getOrCreateJourneyNotification({
+                  guardianUserId: guardianId,
+                  journeyId: journey.id,
+                  escalationCycleId,
+                  title,
+                  message,
+                  });
+
+            await EmergencyNotificationService.sendToGuardian(
+              notification.id,
+              guardianId,
+              title,
+              message
+            );
+          } catch (error) {
+            console.error(
+              "Safe Journey guardian notification error:",
+              error
+            );
+          }
+        }
+      } catch (error) {
+        console.error(
+          "Safe Journey escalation error:",
+          journey.id,
+          error
+        );
       }
     }
 

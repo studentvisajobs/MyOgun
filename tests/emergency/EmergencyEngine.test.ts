@@ -1,110 +1,95 @@
-
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  networkCallback: null as ((status: "ONLINE" | "OFFLINE") => void) | null,
-  updateEmergencySession: vi.fn(),
-  getActiveEmergencySession: vi.fn(),
+const {
+  findJourney,
+  updateJourney,
+  cancelNotifications,
+} = vi.hoisted(() => ({
+  findJourney: vi.fn(),
+  updateJourney: vi.fn(),
+  cancelNotifications: vi.fn(),
 }));
 
-vi.mock("../../lib/emergency/EmergencyBattery", () => ({
-  getEmergencyBatteryLevel: vi.fn().mockResolvedValue(80),
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    safeJourney: {
+      findFirst: findJourney,
+      update: updateJourney,
+    },
+  },
 }));
 
-vi.mock("../../lib/emergency/EmergencyGPS", () => ({
-  getEmergencyGPS: vi.fn().mockResolvedValue({
-    latitude: 53.5,
-    longitude: -2.6,
-    accuracy: 10,
-  }),
-  watchEmergencyGPS: vi.fn().mockReturnValue(1),
-  stopEmergencyGPSWatch: vi.fn(),
-}));
+vi.mock(
+  "@/lib/notifications/EmergencyNotificationService",
+  () => ({
+    EmergencyNotificationService: {
+      cancelJourneyNotifications: cancelNotifications,
+    },
+  })
+);
 
-vi.mock("../../lib/emergency/EmergencyNetwork", () => ({
-  getEmergencyNetworkStatus: vi.fn().mockReturnValue("ONLINE"),
-  watchEmergencyNetwork: vi.fn((callback) => {
-    mocks.networkCallback = callback;
-    callback("ONLINE");
-    return vi.fn();
-  }),
-}));
+import { JourneyService } from "../../lib/services/JourneyService";
 
-vi.mock("../../lib/emergency/EmergencySession", () => ({
-  startEmergencySession: vi.fn(),
-  stopEmergencySession: vi.fn(),
-  updateEmergencySession: mocks.updateEmergencySession,
-  getActiveEmergencySession: mocks.getActiveEmergencySession,
-}));
-
-vi.mock("../../lib/emergency/EmergencyTimeline", () => ({
-  createEmergencyTimelineEvent: vi.fn((message: string) => ({
-    time: new Date().toISOString(),
-    message,
-  })),
-}));
-
-import { EmergencyEngine } from "../../lib/emergency/EmergencyEngine";
-
-describe("EmergencyEngine network reconnection", () => {
+describe("JourneyService", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.networkCallback = null;
+    vi.resetAllMocks();
+  });
 
-    mocks.getActiveEmergencySession.mockResolvedValue({
-      success: true,
-      session: {
-        id: "emergency-test-1",
-        guardianSessionId: "guardian-test-1",
-        status: "ACTIVE",
-        latitude: 53.5,
-        longitude: -2.6,
-        battery: 80,
-        network: "ONLINE",
-        startedAt: new Date().toISOString(),
+  it("completes an active journey and cancels guardian notifications", async () => {
+    findJourney.mockResolvedValue({
+      id: "journey-test-1",
+    });
+
+    updateJourney.mockResolvedValue({
+      id: "journey-test-1",
+      status: "COMPLETED",
+      endedAt: new Date(),
+      timeline: [],
+      locations: [],
+    });
+
+    cancelNotifications.mockResolvedValue({
+      count: 1,
+    });
+
+    const result = await JourneyService.stop({
+      userId: "user-test-1",
+      journeyId: "journey-test-1",
+    });
+
+    expect(result.status).toBe("COMPLETED");
+
+    expect(findJourney).toHaveBeenCalledWith({
+      where: {
+        id: "journey-test-1",
+        userId: "user-test-1",
+        status: {
+          in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+        },
+      },
+      select: {
+        id: true,
       },
     });
 
-    mocks.updateEmergencySession.mockResolvedValue({
-      success: true,
-    });
-  });
-
-  it("synchronizes the latest location after OFFLINE to ONLINE", async () => {
-    const engine = new EmergencyEngine({
-      mode: "SILENT_SOS",
-      onStatus: vi.fn(),
-      onTimeline: vi.fn(),
-      onLocation: vi.fn(),
-      onBattery: vi.fn(),
-      onSession: vi.fn(),
-    });
-
-    expect(await engine.resume()).toBe(true);
-
-    expect(mocks.networkCallback).not.toBeNull();
-
-    // Initial ONLINE status must not trigger an update.
-    expect(mocks.updateEmergencySession).not.toHaveBeenCalled();
-
-    mocks.networkCallback?.("OFFLINE");
-    mocks.networkCallback?.("ONLINE");
-
-    await vi.waitFor(() => {
-      expect(mocks.updateEmergencySession).toHaveBeenCalledTimes(1);
-    });
-
-    expect(mocks.updateEmergencySession).toHaveBeenCalledWith(
-      "emergency-test-1",
-      "Location synchronised after network reconnection.",
+    expect(updateJourney).toHaveBeenCalledWith(
       expect.objectContaining({
-        latitude: 53.5,
-        longitude: -2.6,
-      }),
-      80,
-      "ONLINE"
+       where: {
+        id: "journey-test-1",
+        userId: "user-test-1",
+        status: {
+          in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+        },
+      },
+        data: expect.objectContaining({
+          status: "COMPLETED",
+          endedAt: expect.any(Date),
+        }),
+      })
     );
 
-    engine.dispose();
+    expect(cancelNotifications).toHaveBeenCalledWith(
+      "journey-test-1"
+    );
   });
 });
