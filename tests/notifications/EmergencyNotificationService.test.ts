@@ -7,14 +7,18 @@ const {
   findNotification,
   findActiveNotification,
   findJourney,
+  findGuardianSession,
   notifyUser,
+  getAuthorizedGuardianIds,
 } = vi.hoisted(() => ({
   claimForSending: vi.fn(),
   updateMany: vi.fn(),
   findNotification: vi.fn(),
   findActiveNotification: vi.fn(),
   findJourney: vi.fn(),
+  findGuardianSession: vi.fn(),
   notifyUser: vi.fn(),
+  getAuthorizedGuardianIds: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -28,6 +32,9 @@ vi.mock("@/lib/prisma", () => ({
     safeJourney: {
       findFirst: findJourney,
     },
+        guardianSession: {
+      findUnique: findGuardianSession,
+    },
   },
 }));
 
@@ -37,11 +44,24 @@ vi.mock("@/lib/notifications/NotificationService", () => ({
   },
 }));
 
+vi.mock("@/lib/services/GuardianRecipientService", () => ({
+  GuardianRecipientService: {
+    getAuthorizedGuardianIds,
+  },
+}));
+
 import { EmergencyNotificationService } from "../../lib/notifications/EmergencyNotificationService";
 
 describe("EmergencyNotificationService", () => {
 beforeEach(() => {
   vi.resetAllMocks();
+      findGuardianSession.mockResolvedValue({
+      userId: "owner-test-1",
+      status: "ACTIVE",
+      guardianModeEnabled: true,
+      linkedEmergencies: [],
+    });
+    getAuthorizedGuardianIds.mockResolvedValue(["guardian-test-1"]);
 
   findNotification.mockResolvedValue({
     journeyId: null,
@@ -50,6 +70,448 @@ beforeEach(() => {
 
   findActiveNotification.mockResolvedValue({
     id: "active-notification-test",
+  });
+});
+
+it("blocks Silent SOS alerts to removed guardians", async () => {
+  claimForSending.mockResolvedValue([{ pushAttempts: 1 }]);
+  updateMany.mockResolvedValue({ count: 1 });
+
+  findNotification.mockResolvedValue({
+    journeyId: null,
+    emergencyId: "guardian-session:removed-guardian-sos-test",
+  });
+
+  findGuardianSession.mockResolvedValue({
+    userId: "owner-test-1",
+    status: "ACTIVE",
+    guardianModeEnabled: false,
+    linkedEmergencies: [
+      {
+        id: "active-silent-sos-test-2",
+      },
+    ],
+  });
+
+  // This guardian has been removed from the authorised network.
+  getAuthorizedGuardianIds.mockResolvedValue([]);
+
+  const result = await EmergencyNotificationService.sendToGuardian(
+    "removed-guardian-sos-notification",
+    "guardian-test-1",
+    "MyOgun Silent SOS",
+    "Emergency alert.",
+  );
+
+  expect(result.attempted).toBe(false);
+  expect(result.accepted).toBe(false);
+  expect(notifyUser).not.toHaveBeenCalled();
+
+  expect(updateMany).toHaveBeenCalledWith({
+    where: {
+      id: "removed-guardian-sos-notification",
+      pushStatus: "SENDING",
+      pushAttempts: 1,
+    },
+    data: {
+      pushStatus: "CANCELLED",
+    },
+  });
+});
+
+it("cancels Silent SOS alerts when the emergency is no longer active", async () => {
+  claimForSending.mockResolvedValue([{ pushAttempts: 1 }]);
+  updateMany.mockResolvedValue({ count: 1 });
+
+  findNotification.mockResolvedValue({
+    journeyId: null,
+    emergencyId: "guardian-session:closed-silent-sos-test",
+  });
+
+  findGuardianSession.mockResolvedValue({
+    userId: "owner-test-1",
+    status: "ACTIVE",
+    guardianModeEnabled: false,
+    linkedEmergencies: [],
+  });
+
+  getAuthorizedGuardianIds.mockResolvedValue(["guardian-test-1"]);
+
+  const result = await EmergencyNotificationService.sendToGuardian(
+    "closed-silent-sos-notification-test",
+    "guardian-test-1",
+    "MyOgun Silent SOS",
+    "Emergency alert.",
+  );
+
+  expect(result.attempted).toBe(false);
+  expect(result.accepted).toBe(false);
+  expect(notifyUser).not.toHaveBeenCalled();
+
+  expect(updateMany).toHaveBeenCalledWith({
+    where: {
+      id: "closed-silent-sos-notification-test",
+      pushStatus: "SENDING",
+      pushAttempts: 1,
+    },
+    data: {
+      pushStatus: "CANCELLED",
+    },
+  });
+});
+
+it("sends Silent SOS alerts when Guardian Mode is disabled", async () => {
+  claimForSending.mockResolvedValue([{ pushAttempts: 1 }]);
+  updateMany.mockResolvedValue({ count: 1 });
+
+  findNotification.mockResolvedValue({
+    journeyId: null,
+    emergencyId: "guardian-session:silent-sos-test-1",
+  });
+
+  findGuardianSession.mockResolvedValue({
+    userId: "owner-test-1",
+    status: "ACTIVE",
+    guardianModeEnabled: false,
+    linkedEmergencies: [
+      {
+        id: "active-silent-sos-test-1",
+      },
+    ],
+  });
+
+  getAuthorizedGuardianIds.mockResolvedValue(["guardian-test-1"]);
+
+  notifyUser.mockResolvedValue({
+    userCount: 1,
+    tokenCount: 1,
+    successCount: 1,
+    failureCount: 0,
+    usersWithoutTokens: 0,
+  });
+
+  const result = await EmergencyNotificationService.sendToGuardian(
+    "silent-sos-notification-test-1",
+    "guardian-test-1",
+    "MyOgun Silent SOS",
+    "Silent emergency alert.",
+  );
+
+  expect(result.attempted).toBe(true);
+  expect(result.accepted).toBe(true);
+
+  expect(notifyUser).toHaveBeenCalledWith(
+    "guardian-test-1",
+    "MyOgun Silent SOS",
+    "Silent emergency alert.",
+    "/guardian/respond/silent-sos-test-1",
+  );
+
+  expect(updateMany).toHaveBeenCalledWith({
+    where: {
+      id: "silent-sos-notification-test-1",
+      pushStatus: "SENDING",
+      pushAttempts: 1,
+    },
+    data: {
+      pushStatus: "SENT",
+      pushSentAt: expect.any(Date),
+    },
+  });
+});
+
+it("cancels Guardian Mode alerts when the session was deleted", async () => {
+  claimForSending.mockResolvedValue([{ pushAttempts: 1 }]);
+  updateMany.mockResolvedValue({ count: 1 });
+
+  findNotification.mockResolvedValue({
+    journeyId: null,
+    emergencyId: "guardian-session:deleted-session-test-1",
+  });
+
+  // The Guardian Session no longer exists.
+  findGuardianSession.mockResolvedValue(null);
+
+  const result = await EmergencyNotificationService.sendToGuardian(
+    "deleted-session-notification-test-1",
+    "guardian-test-1",
+    "MyOgun SOS Emergency",
+    "Simulated Guardian Mode emergency.",
+  );
+
+
+  expect(findGuardianSession).toHaveBeenCalledWith({
+    where: {
+      id: "deleted-session-test-1",
+    },
+    select: {
+      userId: true,
+      status: true,
+      guardianModeEnabled: true,
+      linkedEmergencies: {
+        where: {
+          silentSOS: true,
+          status: {
+            in: ["ACTIVE", "MONITORING", "RESPONDING"],
+          },
+        },
+        select: {
+          id: true,
+        },
+        take: 1,
+      },
+    },
+  });
+
+  expect(updateMany).toHaveBeenCalledWith({
+    where: {
+      id: "deleted-session-notification-test-1",
+      pushStatus: "SENDING",
+      pushAttempts: 1,
+    },
+    data: {
+      pushStatus: "CANCELLED",
+    },
+  });
+
+  expect(notifyUser).not.toHaveBeenCalled();
+
+  expect(result).toEqual({
+    attempted: false,
+    accepted: false,
+  });
+});
+
+it("does not send a Guardian Mode alert cancelled during authorization", async () => {
+  claimForSending.mockResolvedValue([{ pushAttempts: 1 }]);
+
+  findNotification.mockResolvedValue({
+    journeyId: null,
+    emergencyId: "guardian-session:active-session-test-1",
+  });
+
+  findGuardianSession.mockResolvedValue({
+    userId: "owner-test-1",
+    status: "ACTIVE",
+    guardianModeEnabled: true,
+    linkedEmergencies: [],
+  });
+
+  getAuthorizedGuardianIds.mockResolvedValue(["guardian-test-1"]);
+
+  // Notification was cancelled after being claimed.
+  findActiveNotification.mockResolvedValue(null);
+
+  const result = await EmergencyNotificationService.sendToGuardian(
+    "cancelled-guardian-notification-test-1",
+    "guardian-test-1",
+    "MyOgun SOS Emergency",
+    "Simulated Guardian Mode emergency.",
+  );
+
+  expect(findActiveNotification).toHaveBeenCalledWith({
+    where: {
+      id: "cancelled-guardian-notification-test-1",
+      pushStatus: "SENDING",
+      pushAttempts: 1,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  expect(notifyUser).not.toHaveBeenCalled();
+
+  expect(result).toEqual({
+    attempted: false,
+    accepted: false,
+  });
+});
+
+it("cancels queued alerts when Guardian Mode is disabled", async () => {
+  claimForSending.mockResolvedValue([{ pushAttempts: 1 }]);
+  updateMany.mockResolvedValue({ count: 1 });
+
+  findNotification.mockResolvedValue({
+    journeyId: null,
+    emergencyId: "guardian-session:disabled-session-test-1",
+  });
+
+  findGuardianSession.mockResolvedValue({
+    userId: "owner-test-1",
+    status: "ACTIVE",
+    guardianModeEnabled: false,
+    linkedEmergencies: [],
+  });
+
+  const result = await EmergencyNotificationService.sendToGuardian(
+    "disabled-session-notification-test-1",
+    "guardian-test-1",
+    "MyOgun SOS Emergency",
+    "Simulated Guardian Mode emergency.",
+  );
+
+  expect(findGuardianSession).toHaveBeenCalledWith({
+    where: {
+      id: "disabled-session-test-1",
+    },
+    select: {
+      userId: true,
+      status: true,
+      guardianModeEnabled: true,
+      linkedEmergencies: {
+        where: {
+          silentSOS: true,
+          status: {
+            in: ["ACTIVE", "MONITORING", "RESPONDING"],
+          },
+        },
+        select: {
+          id: true,
+        },
+        take: 1,
+      },
+    },
+  });
+
+  expect(updateMany).toHaveBeenCalledWith({
+    where: {
+      id: "disabled-session-notification-test-1",
+      pushStatus: "SENDING",
+      pushAttempts: 1,
+    },
+    data: {
+      pushStatus: "CANCELLED",
+    },
+  });
+
+  expect(getAuthorizedGuardianIds).not.toHaveBeenCalled();
+  expect(notifyUser).not.toHaveBeenCalled();
+
+  expect(result).toEqual({
+    attempted: false,
+    accepted: false,
+  });
+});
+
+it("cancels queued Guardian Mode alerts for removed guardians", async () => {
+  claimForSending.mockResolvedValue([{ pushAttempts: 1 }]);
+  updateMany.mockResolvedValue({ count: 1 });
+
+  findNotification.mockResolvedValue({
+    journeyId: null,
+    emergencyId: "guardian-session-test-1",
+  });
+
+  findGuardianSession.mockResolvedValue({
+    userId: "owner-test-1",
+    status: "ACTIVE",
+    guardianModeEnabled: true,
+    linkedEmergencies: [],
+  });
+
+  // Guardian was removed after the notification was queued.
+  getAuthorizedGuardianIds.mockResolvedValue([]);
+
+  const result = await EmergencyNotificationService.sendToGuardian(
+    "guardian-notification-test-1",
+    "guardian-test-1",
+    "MyOgun SOS Emergency",
+    "Simulated Guardian Mode emergency.",
+  );
+
+  expect(findGuardianSession).toHaveBeenCalledWith({
+    where: {
+      id: "guardian-session-test-1",
+    },
+    select: {
+      userId: true,
+      status: true,
+      guardianModeEnabled: true,
+      linkedEmergencies: {
+        where: {
+          silentSOS: true,
+          status: {
+            in: ["ACTIVE", "MONITORING", "RESPONDING"],
+          },
+        },
+        select: {
+          id: true,
+        },
+        take: 1,
+      },
+    },
+  });
+
+  expect(getAuthorizedGuardianIds).toHaveBeenCalledWith(
+    "owner-test-1",
+  );
+
+  expect(updateMany).toHaveBeenCalledWith({
+    where: {
+      id: "guardian-notification-test-1",
+      pushStatus: "SENDING",
+      pushAttempts: 1,
+    },
+    data: {
+      pushStatus: "CANCELLED",
+    },
+  });
+
+  expect(notifyUser).not.toHaveBeenCalled();
+
+  expect(result).toEqual({
+    attempted: false,
+    accepted: false,
+  });
+});
+
+it("cancels queued Safe Journey alerts for removed guardians", async () => {
+  const cycleId = "2026-10-29T10:00:00.000Z";
+
+  claimForSending.mockResolvedValue([{ pushAttempts: 1 }]);
+  updateMany.mockResolvedValue({ count: 1 });
+
+  findNotification.mockResolvedValue({
+    journeyId: "journey-test-1",
+    emergencyId: `journey:journey-test-1:${cycleId}`,
+  });
+
+  findJourney.mockResolvedValue({
+    userId: "owner-test-1",
+    escalatedAt: new Date(cycleId),
+  });
+
+  // Guardian has been removed from the Guardian Circle.
+  getAuthorizedGuardianIds.mockResolvedValue([]);
+
+  const result = await EmergencyNotificationService.sendToGuardian(
+    "notification-test-1",
+    "guardian-test-1",
+    "MyOgun Safe Journey Alert",
+    "Simulated emergency notification.",
+  );
+
+  expect(getAuthorizedGuardianIds).toHaveBeenCalledWith(
+    "owner-test-1",
+  );
+
+  expect(updateMany).toHaveBeenCalledWith({
+    where: {
+      id: "notification-test-1",
+      pushStatus: "SENDING",
+      pushAttempts: 1,
+    },
+    data: {
+      pushStatus: "CANCELLED",
+    },
+  });
+
+  expect(notifyUser).not.toHaveBeenCalled();
+
+  expect(result).toEqual({
+    attempted: false,
+    accepted: false,
   });
 });
 
@@ -93,6 +555,7 @@ it("does not dispatch a Safe Journey alert cancelled before Firebase delivery", 
   });
 
   findJourney.mockResolvedValue({
+    userId: "owner-test-1",
     escalatedAt: new Date(cycleId),
   });
 
@@ -156,6 +619,7 @@ it("does not send a Safe Journey alert after the journey is completed", async ()
       escalatedAt: { not: null },
     },
     select: {
+      userId: true,
       escalatedAt: true,
     },
   });
@@ -225,6 +689,14 @@ it("does not send a Safe Journey alert after the journey is completed", async ()
   });
 
   it("records a successful Firebase notification", async () => {
+    findActiveNotification.mockResolvedValue({
+      id: "test-notification-2",
+    });
+
+    findNotification.mockResolvedValue({
+      journeyId: null,
+      emergencyId: "guardian-session:firebase-success-test",
+    });
     claimForSending.mockResolvedValue([{ pushAttempts: 1 }]);
 
     notifyUser.mockResolvedValue({
@@ -237,7 +709,7 @@ it("does not send a Safe Journey alert after the journey is completed", async ()
 
     const result = await EmergencyNotificationService.sendToGuardian(
       "test-notification-2",
-      "test-guardian-2",
+      "guardian-test-1",
       "MyOgun SOS Emergency",
       "Simulated emergency alert.",
     );
@@ -260,6 +732,11 @@ it("does not send a Safe Journey alert after the journey is completed", async ()
   });
 
   it("records a failed Firebase notification", async () => {
+
+    findActiveNotification.mockResolvedValue({
+      id: "test-notification-3",
+    });
+
     claimForSending.mockResolvedValue([{ pushAttempts: 2 }]);
 
     notifyUser.mockResolvedValue({
@@ -272,7 +749,7 @@ it("does not send a Safe Journey alert after the journey is completed", async ()
 
     const result = await EmergencyNotificationService.sendToGuardian(
       "test-notification-3",
-      "test-guardian-3",
+      "guardian-test-1",
       "MyOgun SOS Emergency",
       "Simulated failed emergency alert.",
     );

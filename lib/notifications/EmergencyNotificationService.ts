@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NotificationService as PushNotificationService } from "@/lib/notifications/NotificationService";
+import { GuardianRecipientService } from "@/lib/services/GuardianRecipientService";
 
 type EmergencyNotificationInput = {
   userId: string;
@@ -275,9 +276,34 @@ try {
         escalatedAt: { not: null },
       },
       select: {
+        userId: true,
         escalatedAt: true,
       },
     });
+
+    if (journey) {
+      if (!journey.userId) {
+        await this.markCancelled(notificationId, attemptNumber);
+
+        return {
+          attempted: false,
+          accepted: false,
+        };
+      }
+      const authorizedGuardianIds =
+        await GuardianRecipientService.getAuthorizedGuardianIds(
+          journey.userId,
+        );
+
+      if (!authorizedGuardianIds.includes(guardianUserId)) {
+        await this.markCancelled(notificationId, attemptNumber);
+
+        return {
+          attempted: false,
+          accepted: false,
+        };
+      }
+    }
 
     const expectedEmergencyId = journey?.escalatedAt
       ? `journey:${notification.journeyId}:${journey.escalatedAt.toISOString()}`
@@ -315,10 +341,128 @@ try {
     }
     }
 
+     // Verify Guardian Mode authorization before push delivery.
+    if (!notification.journeyId && notification.emergencyId) {
+      const prefix = "guardian-session:";
+      const isGuardianModeNotification =
+        notification.emergencyId.startsWith(prefix);
+
+      const sessionId = isGuardianModeNotification
+        ? notification.emergencyId.slice(prefix.length)
+        : notification.emergencyId;
+
+      const session = sessionId
+        ? await prisma.guardianSession.findUnique({
+            where: {
+              id: sessionId,
+            },
+          select: {
+            userId: true,
+            status: true,
+            guardianModeEnabled: true,
+            linkedEmergencies: {
+              where: {
+                silentSOS: true,
+                status: {
+                  in: ["ACTIVE", "MONITORING", "RESPONDING"],
+                },
+              },
+              select: {
+                id: true,
+              },
+              take: 1,
+            },
+          },
+          })
+        : null;
+
+      // New Guardian Mode notifications must have a valid session.
+      // Legacy notifications retain their existing lookup behaviour.
+      if (isGuardianModeNotification && !session) {
+        await this.markCancelled(notificationId, attemptNumber);
+
+        return {
+          attempted: false,
+          accepted: false,
+        };
+      }
+
+      if (session) {
+const hasActiveSilentSOS =
+  session.linkedEmergencies.length > 0;
+
+        if (
+          !session.userId ||
+          session.status !== "ACTIVE" ||
+          (!session.guardianModeEnabled && !hasActiveSilentSOS)
+        ) {
+          await this.markCancelled(notificationId, attemptNumber);
+
+          return {
+            attempted: false,
+            accepted: false,
+          };
+        }
+
+        const authorizedGuardianIds =
+          await GuardianRecipientService.getAuthorizedGuardianIds(
+            session.userId,
+          );
+
+        if (!authorizedGuardianIds.includes(guardianUserId)) {
+          await this.markCancelled(notificationId, attemptNumber);
+
+          return {
+            attempted: false,
+            accepted: false,
+          };
+        }
+      }
+    }
+
+        // Recheck Guardian Mode notification status before Firebase delivery.
+    // A notification may have been cancelled during authorization.
+    if (
+      !notification.journeyId &&
+      notification.emergencyId?.startsWith("guardian-session:")
+    ) {
+      const activeNotification = await prisma.notification.findFirst({
+        where: {
+          id: notificationId,
+          pushStatus: "SENDING",
+          pushAttempts: attemptNumber,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!activeNotification) {
+        return {
+          attempted: false,
+          accepted: false,
+        };
+      }
+    }
+
+    const emergencyId = notification.emergencyId;
+
+    const guardianSessionId =
+      !notification.journeyId && emergencyId
+        ? emergencyId.startsWith("guardian-session:")
+          ? emergencyId.slice("guardian-session:".length)
+          : emergencyId
+        : null;
+
+    const clickAction = guardianSessionId
+      ? `/guardian/respond/${encodeURIComponent(guardianSessionId)}`
+      : "/guardian";
+
     const result = await PushNotificationService.notifyUser(
-    guardianUserId,
-    title,
-    message,
+      guardianUserId,
+      title,
+      message,
+      clickAction,
     );
 
       if (result.successCount > 0) {

@@ -20,6 +20,7 @@
     "firebase-admin": "^14.2.0",
     "jose": "^6.2.13",
     "leaflet": "^1.9.4",
+    "lucide-react": "^1.73.0",
     "maplibre-gl": "^6.15.0",
     "next": "^16.4.2",
     "pg": "^8.22.0",

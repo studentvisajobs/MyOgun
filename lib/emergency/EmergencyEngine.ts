@@ -51,22 +51,34 @@ export class EmergencyEngine {
   }
 
   private async collectDeviceState() {
-    const [battery, location] = await Promise.all([
-      getEmergencyBatteryLevel(),
-      getEmergencyGPS(),
-    ]);
+      const [batteryResult, locationResult] = await Promise.allSettled([
+        getEmergencyBatteryLevel(),
+        getEmergencyGPS(),
+      ]);
 
-    const network = getEmergencyNetworkStatus();
+      const battery =
+        batteryResult.status === "fulfilled"
+          ? batteryResult.value
+          : null;
 
-    this.lastBattery = battery;
-    this.lastLocation = location;
+      const location =
+        locationResult.status === "fulfilled"
+          ? locationResult.value
+          : null;
 
-    return {
-      battery,
-      location,
-      network,
-    };
-  }
+      const network = getEmergencyNetworkStatus();
+
+      this.lastBattery = battery;
+      this.lastLocation = location;
+
+      if (!location) {
+        this.addTimeline(
+          "GPS unavailable. Emergency activation will continue without location.",
+        );
+      }
+
+      return { battery, location, network };
+    }
 
   private saveOfflineEmergency(
     location: EmergencyLocation | null,
@@ -251,7 +263,7 @@ export class EmergencyEngine {
   }
 
   private async createOnlineSession(
-    location: EmergencyLocation,
+    location: EmergencyLocation | null,
     battery: number | null,
   ) {
     const network = getEmergencyNetworkStatus();
@@ -276,13 +288,25 @@ export class EmergencyEngine {
 
     await this.assignResponders(response.session.guardianSessionId);
 
-    await updateEmergencySession(
-      this.sessionId,
-      `${this.options.mode} fully active.`,
-      location,
-      battery,
-      network,
-    );
+    try {
+      await updateEmergencySession(
+        this.sessionId,
+        `${this.options.mode} fully active.`,
+        location,
+        battery,
+        network,
+      );
+
+      this.addTimeline("Emergency session update confirmed.");
+    } catch (error) {
+      console.error("Emergency session update failed:", error);
+
+      this.addTimeline(
+        "Emergency session created, but the latest update could not be saved.",
+      );
+    }
+
+this.clearOfflineEmergency();
 
     this.clearOfflineEmergency();
   }
@@ -293,10 +317,6 @@ export class EmergencyEngine {
     }
 
     if (getEmergencyNetworkStatus() !== "ONLINE") {
-      return;
-    }
-
-    if (!this.lastLocation) {
       return;
     }
 
@@ -335,7 +355,9 @@ export class EmergencyEngine {
 
       this.options.onBattery(battery);
 
-      this.options.onLocation(location);
+      if (location) {
+        this.options.onLocation(location);
+      }
 
       this.addTimeline(`Network status: ${network}.`);
 
@@ -343,7 +365,13 @@ export class EmergencyEngine {
         this.addTimeline(`Battery level: ${battery}%.`);
       }
 
-      this.addTimeline("GPS locked.");
+      if (location) {
+        this.addTimeline("GPS locked.");
+      } else {
+        this.addTimeline(
+          "GPS unavailable. Emergency will continue without coordinates.",
+        );
+      }
 
       if (network === "OFFLINE") {
         this.saveOfflineEmergency(location, battery);
@@ -419,12 +447,14 @@ export class EmergencyEngine {
 
       const session = response.session;
 
-      if (
-        !session ||
-        !["ACTIVE", "MONITORING", "RESPONDING"].includes(session.status)
-      ) {
-        return false;
-      }
+    if (
+      !session ||
+      !["ACTIVE", "MONITORING", "RESPONDING"].includes(session.status)
+    ) {
+      throw new Error(
+        "No active server emergency session. Checking local emergency storage.",
+      );
+    }
 
       this.sessionId = session.id;
 
@@ -460,8 +490,14 @@ export class EmergencyEngine {
       this.setStatus("ACTIVE");
 
       return true;
-    } catch (error) {
-      console.error("Emergency session restoration error:", error);
+      } catch (error) {
+        if (
+        !(error instanceof Error) ||
+        error.message !==
+          "No active server emergency session. Checking local emergency storage."
+      ) {
+        console.error("Emergency session restoration error:", error);
+      }
 
       /*
        * There may be a locally stored
@@ -495,6 +531,14 @@ export class EmergencyEngine {
             this.startNetworkMonitoring();
 
             this.setStatus("ACTIVE");
+
+            if (getEmergencyNetworkStatus() === "ONLINE") {
+              this.addTimeline(
+                "Internet available. Attempting to synchronise restored emergency.",
+              );
+
+              void this.syncOfflineEmergency();
+            }
 
             return true;
           }

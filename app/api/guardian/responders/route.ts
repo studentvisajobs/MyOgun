@@ -7,6 +7,7 @@ import {
   GuardianSessionService,
 } from "@/lib/services/GuardianSessionService";
 import { EmergencyNotificationService } from "@/lib/notifications/EmergencyNotificationService";
+import { GuardianRecipientService } from "@/lib/services/GuardianRecipientService";
 
 export async function GET(req: Request) {
   try {
@@ -153,6 +154,14 @@ export async function POST(req: Request) {
       );
     }
 
+    // Only currently authorized guardians may receive emergency alerts.
+    const authorizedGuardianIds =
+      await GuardianRecipientService.getAuthorizedGuardianIds(user.id);
+
+    guardianUserIds = guardianUserIds.filter((guardianId) =>
+      authorizedGuardianIds.includes(guardianId),
+    );
+
     const locationText =
       session.latitude !== null &&
       session.longitude !== null
@@ -181,7 +190,7 @@ export async function POST(req: Request) {
         const notification =
           await EmergencyNotificationService.getOrCreate({
             userId: guardianUserId,
-            emergencyId: session.id,
+            emergencyId: `guardian-session:${session.id}`,
             title,
             message,
           });

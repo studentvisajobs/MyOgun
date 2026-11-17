@@ -1,11 +1,13 @@
 
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/app/generated/prisma/client";
 
 export class GuardianRecipientService {
   static async getAuthorizedGuardianIds(
-    userId: string
+    userId: string,
+    db: Prisma.TransactionClient = prisma
   ): Promise<string[]> {
-    const user = await prisma.user.findUnique({
+    const user = await db.user.findUnique({
       where: { id: userId },
       select: { phone: true },
     });

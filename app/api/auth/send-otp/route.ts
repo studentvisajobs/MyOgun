@@ -118,8 +118,20 @@ export async function POST(req: Request) {
     try {
       await sendOtpSMS(phone, code);
     } catch (error: unknown) {
+      const twilioCode =
+        error && typeof error === "object" && "code" in error
+          ? String(error.code)
+          : "UNKNOWN";
+
+      console.error("MyOgun OTP SMS delivery failed", {
+        provider: "Twilio",
+        errorCode: twilioCode,
+      });
+
       return NextResponse.json(
-        { error: "Unable to send verification code. Please try again later." },
+        {
+          error: "Unable to send verification code. Please try again later.",
+        },
         { status: 502 }
       );
     }
