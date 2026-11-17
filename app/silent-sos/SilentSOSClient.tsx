@@ -41,6 +41,9 @@ export default function SilentSOSClient({
     useState<EmergencyLocation | null>(null);
 
   const [sessionId, setSessionId] =
+  useState<string | null>(null);
+
+  const [guardianSessionId, setGuardianSessionId] =
     useState<string | null>(null);
 
   const [timeline, setTimeline] =
@@ -155,8 +158,9 @@ export default function SilentSOSClient({
           setStartedAt(value);
         },
 
-        onSession: async (id) => {
-          setSessionId(id);
+      onSession: async (id, guardianId) => {
+        setSessionId(id);
+        setGuardianSessionId(guardianId ?? null);
 
           if (id) {
             try {
@@ -391,9 +395,9 @@ export default function SilentSOSClient({
       );
     };
   }, []);
-
   useEffect(() => {
-    if (!sessionId) {
+    if (!guardianSessionId) {
+      setResponders([]);
       return;
     }
 
@@ -402,7 +406,7 @@ export default function SilentSOSClient({
         try {
           const res =
             await fetch(
-              `/api/guardian/responders?sessionId=${sessionId}`
+              `/api/guardian/responders?sessionId=${guardianSessionId}`
             );
 
           if (!res.ok) {
@@ -430,19 +434,19 @@ export default function SilentSOSClient({
 
     return () =>
       clearInterval(interval);
-  }, [sessionId]);
+    }, [guardianSessionId]);
 
-  useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
+    useEffect(() => {
+      if (!guardianSessionId) {
+        return;
+      }
 
-    const loadTimeline =
+      const loadTimeline =
       async () => {
         try {
           const res =
             await fetch(
-              `/api/guardian/timeline?sessionId=${sessionId}`
+             `/api/guardian/timeline?sessionId=${guardianSessionId}`
             );
 
           if (!res.ok) {
@@ -450,6 +454,7 @@ export default function SilentSOSClient({
           }
 
           const data =
+
             await res.json();
 
           setTimeline(
@@ -476,7 +481,7 @@ export default function SilentSOSClient({
       };
 
     void loadTimeline();
-  }, [sessionId]);
+ }, [guardianSessionId]);
 
   function formatTime(
     sec: number
@@ -711,6 +716,7 @@ export default function SilentSOSClient({
       setStartedAt(null);
       setHoldProgress(0);
       setSessionId(null);
+      setGuardianSessionId(null);
       setResponders([]);
     } catch (error) {
       console.error(

@@ -18,22 +18,37 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
+    const latitude =
+        body.latitude == null ? null : Number(body.latitude);
+
+      const longitude =
+        body.longitude == null ? null : Number(body.longitude);
+
+      const batteryInput = body.batteryLevel ?? body.battery;
+      const batteryLevel =
+        batteryInput == null ? null : Number(batteryInput);
+
+      if (
+        (latitude !== null &&
+          (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)) ||
+        (longitude !== null &&
+          (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)) ||
+        (batteryLevel !== null &&
+          (!Number.isInteger(batteryLevel) ||
+            batteryLevel < 0 ||
+            batteryLevel > 100))
+      ) {
+        return NextResponse.json(
+          { error: "Invalid location or battery information." },
+          { status: 400 }
+        );
+      }
+
     const session = await GuardianSessionService.start({
       userId: user.id,
-      latitude:
-        body.latitude === undefined || body.latitude === null
-          ? null
-          : Number(body.latitude),
-      longitude:
-        body.longitude === undefined || body.longitude === null
-          ? null
-          : Number(body.longitude),
-      batteryLevel:
-        body.batteryLevel === undefined || body.batteryLevel === null
-          ? body.battery === undefined || body.battery === null
-            ? null
-            : Number(body.battery)
-          : Number(body.batteryLevel),
+      latitude,
+      longitude,
+      batteryLevel,
       networkStatus:
         typeof body.networkStatus === "string"
           ? body.networkStatus

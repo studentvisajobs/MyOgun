@@ -1,6 +1,7 @@
-import { prisma } from "@/lib/prisma";
+﻿import { prisma } from "@/lib/prisma";
 import { LocationService } from "@/lib/services/LocationService";
 import { NotificationService as PushNotificationService } from "@/lib/notifications/NotificationService";
+import { lockGuardianSessionUser } from "@/lib/services/GuardianSessionLock";
 
 type Presence = "ONLINE" | "RECENT" | "OFFLINE";
 
@@ -231,6 +232,8 @@ export class GuardianService {
   }
   static async removeGuardian(input: RemoveGuardianInput) {
     return prisma.$transaction(async (tx) => {
+      await lockGuardianSessionUser(tx, input.userId);
+
       const guardian = await tx.guardianContact.findFirst({
         where: {
           id: input.guardianId,

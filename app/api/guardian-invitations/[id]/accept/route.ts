@@ -1,9 +1,13 @@
+
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  GuardianService,
+  GuardianServiceError,
+} from "@/lib/services/GuardianService";
 
 export async function PATCH(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -18,95 +22,11 @@ export async function PATCH(
 
     const { id } = await params;
 
-    const invitation = await prisma.guardianInvitation.findUnique({
-      where: {
-        id,
-      },
-      include: {
-        sender: true,
-      },
-    });
-
-    if (!invitation) {
-      return NextResponse.json(
-        { error: "Invitation not found." },
-        { status: 404 }
-      );
-    }
-
-    const isRecipient =
-      invitation.receiverId === user.id ||
-      invitation.receiverPhone === user.phone;
-
-    if (!isRecipient) {
-      return NextResponse.json(
-        { error: "This invitation is not for you." },
-        { status: 403 }
-      );
-    }
-
-    if (invitation.status !== "PENDING") {
-      return NextResponse.json(
-        { error: "Invitation has already been processed." },
-        { status: 400 }
-      );
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.guardianInvitation.update({
-        where: {
-          id,
-        },
-        data: {
-          status: "ACCEPTED",
-          receiverId: user.id,
-        },
-      });
-
-      const senderHasGuardian = await tx.guardianContact.findFirst({
-        where: {
-          userId: invitation.senderId,
-          phone: user.phone,
-        },
-      });
-
-      if (!senderHasGuardian) {
-        await tx.guardianContact.create({
-          data: {
-            userId: invitation.senderId,
-            name: user.name || invitation.receiverName || "Guardian",
-            phone: user.phone,
-            relation: invitation.relation,
-          },
-        });
-      }
-
-      const receiverHasGuardian = await tx.guardianContact.findFirst({
-        where: {
-          userId: user.id,
-          phone: invitation.sender.phone,
-        },
-      });
-
-      if (!receiverHasGuardian) {
-        await tx.guardianContact.create({
-          data: {
-            userId: user.id,
-            name: invitation.sender.name || "Guardian",
-            phone: invitation.sender.phone,
-            relation: invitation.relation,
-          },
-        });
-      }
-
-      await tx.notification.create({
-        data: {
-          userId: invitation.senderId,
-          title: "Guardian Invitation Accepted",
-          message: `${user.name || user.phone} accepted your guardian invitation.`,
-          channel: "GUARDIAN",
-        },
-      });
+    await GuardianService.acceptInvitation({
+      invitationId: id,
+      receiverId: user.id,
+      receiverName: user.name,
+      receiverPhone: user.phone,
     });
 
     return NextResponse.json({
@@ -114,15 +34,18 @@ export async function PATCH(
       message: "Guardian invitation accepted.",
     });
   } catch (error) {
-    console.error(error);
+    if (error instanceof GuardianServiceError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+
+    console.error("Guardian invitation acceptance error:", error);
 
     return NextResponse.json(
-      {
-        error: "Unable to accept invitation.",
-      },
-      {
-        status: 500,
-      }
+      { error: "Unable to accept invitation." },
+      { status: 500 }
     );
   }
 }

@@ -10,11 +10,12 @@ export type PushNotificationResult = {
 };
 
 export class NotificationService {
-  static async notifyUser(
-    userId: string,
-    title: string,
-    message: string
-  ) {
+static async notifyUser(
+  userId: string,
+  title: string,
+  message: string,
+  clickAction = "/guardian"
+) {
     const tokens = await prisma.pushToken.findMany({
       where: { userId },
     });
@@ -40,9 +41,9 @@ export class NotificationService {
           title,
           body: message,
         },
-        data: {
-          clickAction: "/guardian",
-        },
+      data: {
+        clickAction,
+      },
       });
 
     const invalidTokens: string[] = [];

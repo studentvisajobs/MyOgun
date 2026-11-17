@@ -21,20 +21,18 @@ import type {
   EmergencyStatus,
 } from "./EmergencyTypes";
 
-const OFFLINE_EMERGENCY_KEY =
-  "myogun_offline_emergency";
+const OFFLINE_EMERGENCY_KEY = "myogun_offline_emergency";
 
 export class EmergencyEngine {
   private watchId: number | null = null;
-  private stopNetworkWatch: (() => void) | null =
-    null;
+  private stopNetworkWatch: (() => void) | null = null;
 
   private sessionId: string | null = null;
   private running = false;
   private syncing = false;
+  private lastNetworkStatus: "ONLINE" | "OFFLINE" | null = null;
 
-  private lastLocation: EmergencyLocation | null =
-    null;
+  private lastLocation: EmergencyLocation | null = null;
 
   private lastBattery: number | null = null;
 
@@ -49,33 +47,42 @@ export class EmergencyEngine {
   }
 
   private addTimeline(message: string) {
-    this.options.onTimeline(
-      createEmergencyTimelineEvent(message)
-    );
+    this.options.onTimeline(createEmergencyTimelineEvent(message));
   }
 
   private async collectDeviceState() {
-    const [battery, location] = await Promise.all([
-      getEmergencyBatteryLevel(),
-      getEmergencyGPS(),
-    ]);
+      const [batteryResult, locationResult] = await Promise.allSettled([
+        getEmergencyBatteryLevel(),
+        getEmergencyGPS(),
+      ]);
 
-    const network =
-      getEmergencyNetworkStatus();
+      const battery =
+        batteryResult.status === "fulfilled"
+          ? batteryResult.value
+          : null;
 
-    this.lastBattery = battery;
-    this.lastLocation = location;
+      const location =
+        locationResult.status === "fulfilled"
+          ? locationResult.value
+          : null;
 
-    return {
-      battery,
-      location,
-      network,
-    };
-  }
+      const network = getEmergencyNetworkStatus();
+
+      this.lastBattery = battery;
+      this.lastLocation = location;
+
+      if (!location) {
+        this.addTimeline(
+          "GPS unavailable. Emergency activation will continue without location.",
+        );
+      }
+
+      return { battery, location, network };
+    }
 
   private saveOfflineEmergency(
     location: EmergencyLocation | null,
-    battery: number | null
+    battery: number | null,
   ) {
     if (typeof window === "undefined") {
       return;
@@ -88,16 +95,12 @@ export class EmergencyEngine {
           mode: this.options.mode,
           location,
           battery,
-          startedAt:
-            new Date().toISOString(),
+          startedAt: new Date().toISOString(),
           pendingSync: true,
-        })
+        }),
       );
     } catch (error) {
-      console.error(
-        "Unable to save offline emergency:",
-        error
-      );
+      console.error("Unable to save offline emergency:", error);
     }
   }
 
@@ -107,9 +110,7 @@ export class EmergencyEngine {
     }
 
     try {
-      localStorage.removeItem(
-        OFFLINE_EMERGENCY_KEY
-      );
+      localStorage.removeItem(OFFLINE_EMERGENCY_KEY);
     } catch {
       // Ignore storage cleanup errors.
     }
@@ -118,75 +119,88 @@ export class EmergencyEngine {
   private startNetworkMonitoring() {
     this.stopNetworkWatch?.();
 
-    this.stopNetworkWatch =
-      watchEmergencyNetwork(
-        (networkStatus) => {
-          if (!this.running) {
-            return;
-          }
+  this.stopNetworkWatch = watchEmergencyNetwork((networkStatus) => {
+    if (!this.running) {
+      return;
+    }
 
-          if (networkStatus === "OFFLINE") {
-            this.addTimeline(
-              "Internet connection lost. Offline emergency fallback active."
-            );
+    const previousStatus = this.lastNetworkStatus;
+    this.lastNetworkStatus = networkStatus;
 
-            this.saveOfflineEmergency(
-              this.lastLocation,
-              this.lastBattery
-            );
+    const justReconnected =
+      previousStatus === "OFFLINE" &&
+      networkStatus === "ONLINE";
 
-            return;
-          }
+    if (networkStatus === "ONLINE" && !justReconnected) {
+      return;
+    }
 
-          if (
-            networkStatus === "ONLINE" &&
-            !this.sessionId
-          ) {
-            this.addTimeline(
-              "Internet connection restored. Synchronising emergency..."
-            );
+    if (networkStatus === "OFFLINE") {
+        this.addTimeline(
+          "Internet connection lost. Offline emergency fallback active.",
+        );
 
-            void this.syncOfflineEmergency();
-          }
+        this.saveOfflineEmergency(this.lastLocation, this.lastBattery);
+
+        return;
+      }
+
+      if (networkStatus === "ONLINE") {
+        if (!this.sessionId) {
+          this.addTimeline(
+            "Internet connection restored. Synchronising emergency...",
+          );
+
+          void this.syncOfflineEmergency();
+        } else if (this.lastLocation) {
+          const sessionId = this.sessionId;
+          const location = this.lastLocation;
+
+          void updateEmergencySession(
+            sessionId,
+            "Location synchronised after network reconnection.",
+            location,
+            this.lastBattery,
+            networkStatus
+          )
+            .then(() => {
+              this.clearOfflineEmergency();
+              this.addTimeline(
+                "Latest location synchronised successfully."
+              );
+            })
+            .catch((error) => {
+              console.error("Emergency reconnection sync error:", error);
+              this.addTimeline(
+                "Location synchronisation failed. Waiting for another update."
+              );
+            });
         }
-      );
+      }
+    });
   }
 
   private startGPSMonitoring() {
     stopEmergencyGPSWatch(this.watchId);
 
     this.watchId = watchEmergencyGPS(
-      async (
-        newLocation: EmergencyLocation
-      ) => {
+      async (newLocation: EmergencyLocation) => {
         this.lastLocation = newLocation;
 
-        this.options.onLocation(
-          newLocation
-        );
+        this.options.onLocation(newLocation);
 
-        const currentBattery =
-          await getEmergencyBatteryLevel();
+        const currentBattery = await getEmergencyBatteryLevel();
 
-        const currentNetwork =
-          getEmergencyNetworkStatus();
+        const currentNetwork = getEmergencyNetworkStatus();
 
-        this.lastBattery =
-          currentBattery;
+        this.lastBattery = currentBattery;
 
-        this.options.onBattery(
-          currentBattery
-        );
+        this.options.onBattery(currentBattery);
 
         if (!this.sessionId) {
-          this.saveOfflineEmergency(
-            newLocation,
-            currentBattery
-          );
+          this.saveOfflineEmergency(newLocation, currentBattery);
 
-          this.addTimeline(
-            "Offline GPS location updated."
-          );
+          this.addTimeline("Offline GPS location updated.");
 
           return;
         }
@@ -197,166 +211,128 @@ export class EmergencyEngine {
             "Location updated.",
             newLocation,
             currentBattery,
-            currentNetwork
+            currentNetwork,
           );
 
-          this.addTimeline(
-            "Live location updated."
-          );
+          this.addTimeline("Live location updated.");
         } catch (error) {
-          console.error(
-            "Emergency location update error:",
-            error
-          );
+          console.error("Emergency location update error:", error);
 
-          this.saveOfflineEmergency(
-            newLocation,
-            currentBattery
-          );
+          this.saveOfflineEmergency(newLocation, currentBattery);
 
-          this.addTimeline(
-            "Location saved locally until connection returns."
-          );
+          this.addTimeline("Location saved locally until connection returns.");
         }
       },
       (message) => {
         this.addTimeline(message);
-      }
+      },
     );
   }
 
-  private async assignResponders() {
-    if (!this.sessionId) {
+  private async assignResponders(guardianSessionId?: string | null) {
+    if (!guardianSessionId) {
+      this.addTimeline(
+        "Guardian Session unavailable. Responder assignment could not start.",
+      );
       return;
     }
 
-    this.addTimeline(
-      "Assigning guardian responders..."
-    );
+    this.addTimeline("Assigning guardian responders...");
 
     try {
-      const responderResponse =
-        await fetch(
-          "/api/guardian/responders",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              sessionId:
-                this.sessionId,
-            }),
-          }
-        );
+      const responderResponse = await fetch("/api/guardian/responders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId: guardianSessionId,
+        }),
+      });
 
       if (responderResponse.ok) {
-        this.addTimeline(
-          "Guardian responders assigned."
-        );
+        this.addTimeline("Guardian responders assigned.");
       } else {
-        this.addTimeline(
-          "Unable to assign responders."
-        );
+        this.addTimeline("Unable to assign responders.");
       }
     } catch (error) {
-      console.error(
-        "Assign responders error:",
-        error
-      );
+      console.error("Assign responders error:", error);
 
-      this.addTimeline(
-        "Responder assignment will retry when online."
-      );
+      this.addTimeline("Responder assignment will retry when online.");
     }
   }
 
   private async createOnlineSession(
-    location: EmergencyLocation,
-    battery: number | null
+    location: EmergencyLocation | null,
+    battery: number | null,
   ) {
-    const network =
-      getEmergencyNetworkStatus();
+    const network = getEmergencyNetworkStatus();
 
-    const response =
-      await startEmergencySession(
-        this.options.mode,
-        location,
-        battery,
-        network
-      );
-
-    this.sessionId =
-      response.session.id;
-
-    this.options.onSession(
-      this.sessionId
-    );
-
-    this.options.onStartedAt?.(
-      response.session.startedAt ??
-        null
-    );
-
-    this.addTimeline(
-      "Emergency session saved."
-    );
-
-    await this.assignResponders();
-
-    await updateEmergencySession(
-      this.sessionId,
-      `${this.options.mode} fully active.`,
+    const response = await startEmergencySession(
+      this.options.mode,
       location,
       battery,
-      network
+      network,
     );
+
+    this.sessionId = response.session.id;
+
+    this.options.onSession(
+      this.sessionId,
+      response.session.guardianSessionId ?? null,
+    );
+
+    this.options.onStartedAt?.(response.session.startedAt ?? null);
+
+    this.addTimeline("Emergency session saved.");
+
+    await this.assignResponders(response.session.guardianSessionId);
+
+    try {
+      await updateEmergencySession(
+        this.sessionId,
+        `${this.options.mode} fully active.`,
+        location,
+        battery,
+        network,
+      );
+
+      this.addTimeline("Emergency session update confirmed.");
+    } catch (error) {
+      console.error("Emergency session update failed:", error);
+
+      this.addTimeline(
+        "Emergency session created, but the latest update could not be saved.",
+      );
+    }
+
+this.clearOfflineEmergency();
 
     this.clearOfflineEmergency();
   }
 
   private async syncOfflineEmergency() {
-    if (
-      !this.running ||
-      this.sessionId ||
-      this.syncing
-    ) {
+    if (!this.running || this.sessionId || this.syncing) {
       return;
     }
 
-    if (
-      getEmergencyNetworkStatus() !==
-      "ONLINE"
-    ) {
-      return;
-    }
-
-    if (!this.lastLocation) {
+    if (getEmergencyNetworkStatus() !== "ONLINE") {
       return;
     }
 
     this.syncing = true;
 
     try {
-      await this.createOnlineSession(
-        this.lastLocation,
-        this.lastBattery
-      );
+      await this.createOnlineSession(this.lastLocation, this.lastBattery);
 
-      this.addTimeline(
-        "Offline emergency synchronised successfully."
-      );
+      this.addTimeline("Offline emergency synchronised successfully.");
 
       this.setStatus("ACTIVE");
     } catch (error) {
-      console.error(
-        "Offline emergency sync error:",
-        error
-      );
+      console.error("Offline emergency sync error:", error);
 
       this.addTimeline(
-        "Emergency sync failed. MyOgun will retry when connection returns."
+        "Emergency sync failed. MyOgun will retry when connection returns.",
       );
     } finally {
       this.syncing = false;
@@ -372,64 +348,44 @@ export class EmergencyEngine {
 
     this.setStatus("STARTING");
 
-    this.addTimeline(
-      `${this.options.mode} activation started.`
-    );
+    this.addTimeline(`${this.options.mode} activation started.`);
 
     try {
-      const {
-        battery,
-        location,
-        network,
-      } =
-        await this.collectDeviceState();
+      const { battery, location, network } = await this.collectDeviceState();
 
-      this.options.onBattery(
-        battery
-      );
+      this.options.onBattery(battery);
 
-      this.options.onLocation(
-        location
-      );
+      if (location) {
+        this.options.onLocation(location);
+      }
 
-      this.addTimeline(
-        `Network status: ${network}.`
-      );
+      this.addTimeline(`Network status: ${network}.`);
 
       if (battery !== null) {
+        this.addTimeline(`Battery level: ${battery}%.`);
+      }
+
+      if (location) {
+        this.addTimeline("GPS locked.");
+      } else {
         this.addTimeline(
-          `Battery level: ${battery}%.`
+          "GPS unavailable. Emergency will continue without coordinates.",
         );
       }
 
-      this.addTimeline(
-        "GPS locked."
-      );
-
       if (network === "OFFLINE") {
-        this.saveOfflineEmergency(
-          location,
-          battery
-        );
+        this.saveOfflineEmergency(location, battery);
 
-        this.options.onSession(
-          null
-        );
+        this.options.onSession(null);
 
-        this.options.onStartedAt?.(
-          new Date().toISOString()
-        );
+        this.options.onStartedAt?.(new Date().toISOString());
+
+        this.addTimeline("OFFLINE EMERGENCY MODE ACTIVE.");
+
+        this.addTimeline("GPS tracking continues locally.");
 
         this.addTimeline(
-          "OFFLINE EMERGENCY MODE ACTIVE."
-        );
-
-        this.addTimeline(
-          "GPS tracking continues locally."
-        );
-
-        this.addTimeline(
-          "Emergency will synchronise automatically when internet returns."
+          "Emergency will synchronise automatically when internet returns.",
         );
 
         this.startGPSMonitoring();
@@ -440,24 +396,16 @@ export class EmergencyEngine {
         return;
       }
 
-      await this.createOnlineSession(
-        location,
-        battery
-      );
+      await this.createOnlineSession(location, battery);
 
       this.startGPSMonitoring();
       this.startNetworkMonitoring();
 
-      this.addTimeline(
-        `${this.options.mode} fully active.`
-      );
+      this.addTimeline(`${this.options.mode} fully active.`);
 
       this.setStatus("ACTIVE");
     } catch (error) {
-      console.error(
-        "Emergency engine start error:",
-        error
-      );
+      console.error("Emergency engine start error:", error);
 
       /*
        * If the server fails but GPS is
@@ -465,13 +413,10 @@ export class EmergencyEngine {
        * Fall back to local emergency mode.
        */
       if (this.lastLocation) {
-        this.saveOfflineEmergency(
-          this.lastLocation,
-          this.lastBattery
-        );
+        this.saveOfflineEmergency(this.lastLocation, this.lastBattery);
 
         this.addTimeline(
-          "Server unavailable. Offline emergency fallback activated."
+          "Server unavailable. Offline emergency fallback activated.",
         );
 
         this.startGPSMonitoring();
@@ -483,9 +428,7 @@ export class EmergencyEngine {
       }
 
       this.addTimeline(
-        error instanceof Error
-          ? error.message
-          : "Emergency activation failed."
+        error instanceof Error ? error.message : "Emergency activation failed.",
       );
 
       this.setStatus("ERROR");
@@ -495,73 +438,51 @@ export class EmergencyEngine {
   }
 
   async resume() {
-    if (
-      this.running ||
-      this.sessionId
-    ) {
+    if (this.running || this.sessionId) {
       return false;
     }
 
     try {
-      const response =
-        await getActiveEmergencySession();
+      const response = await getActiveEmergencySession();
 
-      const session =
-        response.session;
+      const session = response.session;
 
-      if (
-        !session ||
-        !["ACTIVE", "MONITORING", "RESPONDING"].includes(session.status)
-      ) {
-        return false;
-      }
+    if (
+      !session ||
+      !["ACTIVE", "MONITORING", "RESPONDING"].includes(session.status)
+    ) {
+      throw new Error(
+        "No active server emergency session. Checking local emergency storage.",
+      );
+    }
 
-      this.sessionId =
-        session.id;
+      this.sessionId = session.id;
 
       this.running = true;
 
-      this.options.onStartedAt?.(
-        session.startedAt ?? null
-      );
+      this.options.onStartedAt?.(session.startedAt ?? null);
 
-      this.options.onSession(
-        session.id
-      );
+      this.options.onSession(session.id, session.guardianSessionId ?? null);
 
-      this.options.onBattery(
-        session.batteryLevel
-      );
+      this.options.onBattery(session.battery);
 
-      this.lastBattery =
-        session.batteryLevel;
+      this.lastBattery = session.battery;
 
-      if (
-        session.latitude !== null &&
-        session.longitude !== null
-      ) {
-        const restoredLocation: EmergencyLocation =
-          {
-            latitude:
-              session.latitude,
+      if (session.latitude !== null && session.longitude !== null) {
+        const restoredLocation: EmergencyLocation = {
+          latitude: session.latitude,
 
-            longitude:
-              session.longitude,
+          longitude: session.longitude,
 
-            accuracy: undefined,
-          };
+          accuracy: undefined,
+        };
 
-        this.lastLocation =
-          restoredLocation;
+        this.lastLocation = restoredLocation;
 
-        this.options.onLocation(
-          restoredLocation
-        );
+        this.options.onLocation(restoredLocation);
       }
 
-      this.addTimeline(
-        "Active SOS session restored."
-      );
+      this.addTimeline("Active SOS session restored.");
 
       this.startGPSMonitoring();
       this.startNetworkMonitoring();
@@ -569,174 +490,131 @@ export class EmergencyEngine {
       this.setStatus("ACTIVE");
 
       return true;
-    } catch (error) {
-      console.error(
-        "Emergency session restoration error:",
-        error
-      );
+      } catch (error) {
+        if (
+        !(error instanceof Error) ||
+        error.message !==
+          "No active server emergency session. Checking local emergency storage."
+      ) {
+        console.error("Emergency session restoration error:", error);
+      }
 
       /*
        * There may be a locally stored
        * emergency while the device is
        * offline.
        */
-      if (
-        typeof window !== "undefined"
-      ) {
+      if (typeof window !== "undefined") {
         try {
-          const stored =
-            localStorage.getItem(
-              OFFLINE_EMERGENCY_KEY
-            );
+          const stored = localStorage.getItem(OFFLINE_EMERGENCY_KEY);
 
           if (stored) {
-            const offlineEmergency =
-              JSON.parse(stored);
+            const offlineEmergency = JSON.parse(stored);
 
             this.running = true;
 
-            if (
-              offlineEmergency.location
-            ) {
-              this.lastLocation =
-                offlineEmergency.location;
+            if (offlineEmergency.location) {
+              this.lastLocation = offlineEmergency.location;
 
-              this.options.onLocation(
-                offlineEmergency.location
-              );
+              this.options.onLocation(offlineEmergency.location);
             }
 
-            this.lastBattery =
-              offlineEmergency.battery ??
-              null;
+            this.lastBattery = offlineEmergency.battery ?? null;
 
-            this.options.onBattery(
-              this.lastBattery
-            );
+            this.options.onBattery(this.lastBattery);
 
-            this.options.onStartedAt?.(
-              offlineEmergency.startedAt ??
-                null
-            );
+            this.options.onStartedAt?.(offlineEmergency.startedAt ?? null);
 
-            this.addTimeline(
-              "Offline emergency restored."
-            );
+            this.addTimeline("Offline emergency restored.");
 
             this.startGPSMonitoring();
             this.startNetworkMonitoring();
 
             this.setStatus("ACTIVE");
 
+            if (getEmergencyNetworkStatus() === "ONLINE") {
+              this.addTimeline(
+                "Internet available. Attempting to synchronise restored emergency.",
+              );
+
+              void this.syncOfflineEmergency();
+            }
+
             return true;
           }
         } catch (storageError) {
-          console.error(
-            "Offline emergency restore error:",
-            storageError
-          );
+          console.error("Offline emergency restore error:", storageError);
         }
       }
 
-      this.addTimeline(
-        "Unable to restore the active SOS session."
-      );
+      this.addTimeline("Unable to restore the active SOS session.");
 
       return false;
     }
   }
 
   dispose() {
-    stopEmergencyGPSWatch(
-      this.watchId
-    );
+    stopEmergencyGPSWatch(this.watchId);
 
     this.watchId = null;
 
     this.stopNetworkWatch?.();
 
-    this.stopNetworkWatch =
-      null;
+    this.stopNetworkWatch = null;
   }
 
   async stop() {
-    if (
-      !this.running &&
-      !this.sessionId
-    ) {
+    if (!this.running && !this.sessionId) {
       return;
     }
 
     this.setStatus("STOPPING");
 
-    stopEmergencyGPSWatch(
-      this.watchId
-    );
+    stopEmergencyGPSWatch(this.watchId);
 
     this.watchId = null;
 
     this.stopNetworkWatch?.();
 
-    this.stopNetworkWatch =
-      null;
+    this.stopNetworkWatch = null;
 
     try {
       if (this.sessionId) {
-        await stopEmergencySession(
-          this.sessionId
-        );
+        await stopEmergencySession(this.sessionId);
       }
 
       this.clearOfflineEmergency();
 
-      this.addTimeline(
-        `${this.options.mode} stopped safely.`
-      );
+      this.addTimeline(`${this.options.mode} stopped safely.`);
 
       this.sessionId = null;
 
-      this.options.onSession(
-        null
-      );
+      this.options.onSession(null);
 
-      this.options.onStartedAt?.(
-        null
-      );
+      this.options.onStartedAt?.(null);
 
       this.running = false;
 
       this.setStatus("STOPPED");
     } catch (error) {
-      console.error(
-        "Emergency engine stop error:",
-        error
-      );
+      console.error("Emergency engine stop error:", error);
 
       /*
        * If we're offline while stopping,
        * still stop the local tracking.
        */
-      if (
-        getEmergencyNetworkStatus() ===
-        "OFFLINE"
-      ) {
+      if (getEmergencyNetworkStatus() === "OFFLINE") {
         this.clearOfflineEmergency();
 
         this.sessionId = null;
 
-        this.options.onSession(
-          null
-        );
+        this.options.onSession(null);
 
-        this.options.onStartedAt?.(
-          null
-        );
+        this.options.onStartedAt?.(null);
 
         this.running = false;
 
-        this.addTimeline(
-          "Offline emergency stopped locally."
-        );
+        this.addTimeline("Offline emergency stopped locally.");
 
         this.setStatus("STOPPED");
 
@@ -746,7 +624,7 @@ export class EmergencyEngine {
       this.addTimeline(
         error instanceof Error
           ? error.message
-          : "Unable to stop emergency session."
+          : "Unable to stop emergency session.",
       );
 
       this.setStatus("ERROR");

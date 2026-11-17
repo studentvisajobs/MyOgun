@@ -39,11 +39,7 @@ export default function LoginPage() {
       return;
     }
 
-    setStatus(
-  data.devCode
-    ? `OTP sent. Test code: ${data.devCode}`
-    : "OTP sent. Please check your phone."
-);
+    setStatus("Verification code sent. Please check your SMS messages.");
     setStep("otp");
   }
 
@@ -82,7 +78,7 @@ export default function LoginPage() {
     <main className="min-h-screen bg-black px-6 py-10 text-white">
       <div className="mx-auto max-w-md">
         <a href="/" className="font-bold text-emerald-400">
-          ← Home
+          â† Home
         </a>
 
         <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.04] p-6">

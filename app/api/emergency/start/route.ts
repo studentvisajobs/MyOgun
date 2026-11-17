@@ -1,7 +1,6 @@
+
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { NotificationService } from "@/lib/notifications/NotificationService";
 import {
   EmergencySessionService,
   EmergencySessionServiceError,
@@ -13,8 +12,25 @@ const VALID_MODES = [
   "SAFE_JOURNEY",
 ] as const;
 
-type EmergencyMode =
-  (typeof VALID_MODES)[number];
+type EmergencyMode = (typeof VALID_MODES)[number];
+
+function optionalNumber(value: unknown): number | null {
+  if (
+    value === undefined ||
+    value === null ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return null;
+  }
+
+  if (typeof value !== "number" && typeof value !== "string") {
+    return NaN;
+  }
+
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : NaN;
+}
 
 export async function POST(req: Request) {
   try {
@@ -26,148 +42,115 @@ export async function POST(req: Request) {
           success: false,
           error: "Login required.",
         },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid request body.",
+        },
+        { status: 400 },
+      );
+    }
 
     const mode =
       typeof body.mode === "string"
         ? body.mode.trim().toUpperCase()
         : "";
 
-    if (
-      !VALID_MODES.includes(
-        mode as EmergencyMode
-      )
-    ) {
+    if (!VALID_MODES.includes(mode as EmergencyMode)) {
       return NextResponse.json(
         {
           success: false,
           error: "Invalid emergency mode.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const session =
-      await EmergencySessionService.start({
-        userId: user.id,
-        mode: mode as EmergencyMode,
+    const latitude = optionalNumber(body.latitude);
+    const longitude = optionalNumber(body.longitude);
 
-        latitude:
-          body.latitude === undefined ||
-          body.latitude === null
-            ? null
-            : Number(body.latitude),
+    const batteryLevel = optionalNumber(
+      body.batteryLevel ?? body.battery,
+    );
 
-        longitude:
-          body.longitude === undefined ||
-          body.longitude === null
-            ? null
-            : Number(body.longitude),
-
-        batteryLevel:
-          body.batteryLevel === undefined ||
-          body.batteryLevel === null
-            ? body.battery === undefined ||
-              body.battery === null
-              ? null
-              : Number(body.battery)
-            : Number(body.batteryLevel),
-
-        networkStatus:
-          typeof body.networkStatus ===
-          "string"
-            ? body.networkStatus
-            : typeof body.network ===
-                "string"
-              ? body.network
-              : null,
-      });
-
-    // Notify both sides of accepted Guardian Network connections.
-    // Notification failures must not cancel an active emergency.
-    try {
-      const invitations = await prisma.guardianInvitation.findMany({
-        where: {
-          status: "ACCEPTED",
-          OR: [
-            { senderId: user.id },
-            { receiverId: user.id },
-          ],
+    if (
+      (latitude !== null &&
+        (!Number.isFinite(latitude) ||
+          latitude < -90 ||
+          latitude > 90)) ||
+      (longitude !== null &&
+        (!Number.isFinite(longitude) ||
+          longitude < -180 ||
+          longitude > 180))
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid GPS coordinates.",
         },
-        select: {
-          senderId: true,
-          receiverId: true,
-        },
-      });
-
-      const guardianIds = Array.from(
-        new Set(
-          invitations
-            .map((invitation) =>
-              invitation.senderId === user.id
-                ? invitation.receiverId
-                : invitation.senderId
-            )
-            .filter(
-              (id): id is string =>
-                Boolean(id) && id !== user.id
-            )
-        )
-      );
-
-      if (guardianIds.length > 0) {
-        const pushResult = await NotificationService.notifyGuardians(
-          guardianIds,
-          "MyOgun Emergency Alert",
-          `${user.name || "Your guardian contact"} has activated an emergency alert. Open MyOgun immediately.`
-        );
-
-        console.info("Emergency guardian push results:", {
-          sessionId: session.id,
-          ...pushResult,
-        });
-      }
-    } catch (notificationError) {
-      console.error(
-        "Emergency guardian notification error:",
-        notificationError
+        { status: 400 },
       );
     }
+
+    if (
+      batteryLevel !== null &&
+      (!Number.isFinite(batteryLevel) ||
+        batteryLevel < 0 ||
+        batteryLevel > 100)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid battery level.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const session = await EmergencySessionService.start({
+      userId: user.id,
+      mode: mode as EmergencyMode,
+      latitude,
+      longitude,
+      batteryLevel,
+      networkStatus:
+        typeof body.networkStatus === "string"
+          ? body.networkStatus
+          : typeof body.network === "string"
+            ? body.network
+            : null,
+    });
 
     return NextResponse.json({
       success: true,
       session,
     });
   } catch (error) {
-    console.error(
-      "Emergency start error:",
-      error
-    );
+    console.error("Emergency start error:", error);
 
-    if (
-      error instanceof
-      EmergencySessionServiceError
-    ) {
+    if (error instanceof EmergencySessionServiceError) {
       return NextResponse.json(
         {
           success: false,
           error: error.message,
         },
-        { status: error.status }
+        { status: error.status },
       );
     }
 
     return NextResponse.json(
       {
         success: false,
-        error:
-          "Failed to start emergency session.",
+        error: "Failed to start emergency session.",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

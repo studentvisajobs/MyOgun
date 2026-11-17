@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
@@ -5,7 +6,8 @@ import {
   GuardianSessionError,
   GuardianSessionService,
 } from "@/lib/services/GuardianSessionService";
-import { NotificationService as PushNotificationService } from "@/lib/notifications/NotificationService";
+import { EmergencyNotificationService } from "@/lib/notifications/EmergencyNotificationService";
+import { GuardianRecipientService } from "@/lib/services/GuardianRecipientService";
 
 export async function GET(req: Request) {
   try {
@@ -14,40 +16,38 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json(
         { error: "Login required." },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
     const { searchParams } = new URL(req.url);
-    const sessionId =
-      searchParams.get("sessionId")?.trim();
+    const sessionId = searchParams.get("sessionId")?.trim();
 
     if (!sessionId) {
       return NextResponse.json(
         { error: "Session ID is required." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const session =
-      await prisma.guardianSession.findFirst({
-        where: {
-          id: sessionId,
-          userId: user.id,
-        },
-        include: {
-          responders: {
-            orderBy: {
-              createdAt: "asc",
-            },
+    const session = await prisma.guardianSession.findFirst({
+      where: {
+        id: sessionId,
+        userId: user.id,
+      },
+      include: {
+        responders: {
+          orderBy: {
+            createdAt: "asc",
           },
         },
-      });
+      },
+    });
 
     if (!session) {
       return NextResponse.json(
         { error: "Session not found." },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -56,17 +56,11 @@ export async function GET(req: Request) {
       responders: session.responders,
     });
   } catch (error) {
-    console.error(
-      "Fetch guardian responders error:",
-      error
-    );
+    console.error("Fetch guardian responders error:", error);
 
     return NextResponse.json(
-      {
-        error:
-          "Failed to fetch responders.",
-      },
-      { status: 500 }
+      { error: "Failed to fetch responders." },
+      { status: 500 },
     );
   }
 }
@@ -78,12 +72,11 @@ export async function POST(req: Request) {
     if (!user) {
       return NextResponse.json(
         { error: "Login required." },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
-    const body =
-      await req.json().catch(() => null);
+    const body = await req.json().catch(() => null);
 
     const sessionId =
       typeof body?.sessionId === "string"
@@ -93,178 +86,178 @@ export async function POST(req: Request) {
     if (!sessionId) {
       return NextResponse.json(
         { error: "Session ID is required." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const session =
-      await prisma.guardianSession.findFirst({
-        where: {
-          id: sessionId,
-          userId: user.id,
-        },
-        select: {
-          id: true,
-          status: true,
-          latitude: true,
-          longitude: true,
-        },
-      });
+    const session = await prisma.guardianSession.findFirst({
+      where: {
+        id: sessionId,
+        userId: user.id,
+      },
+      select: {
+        id: true,
+        status: true,
+        latitude: true,
+        longitude: true,
+      },
+    });
 
     if (!session) {
       return NextResponse.json(
         { error: "Session not found." },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
     if (session.status !== "ACTIVE") {
       return NextResponse.json(
-        {
-          error:
-            "Guardian session is not active.",
-        },
-        { status: 400 }
+        { error: "Guardian session is not active." },
+        { status: 400 },
       );
     }
 
     const responders =
-      await GuardianSessionService.assignResponders(
-        session.id
-      );
+      await GuardianSessionService.assignResponders(session.id);
 
-    /*
-     * Match responder phone numbers to
-     * registered MyOgun users.
-     */
     const responderPhones = Array.from(
       new Set(
         responders
-          .map(
-            (responder) =>
-              responder.guardianPhone
-          )
+          .map((responder) => responder.guardianPhone)
           .filter(
-            (phone): phone is string =>
-              Boolean(phone)
-          )
-      )
+            (phone): phone is string => Boolean(phone),
+          ),
+      ),
     );
 
     let guardianUserIds: string[] = [];
 
     if (responderPhones.length > 0) {
-      const registeredGuardians =
-        await prisma.user.findMany({
-          where: {
-            phone: {
-              in: responderPhones,
-            },
-
-            // Never send the emergency
-            // notification back to the
-            // person who activated it.
-            id: {
-              not: user.id,
-            },
+      const registeredGuardians = await prisma.user.findMany({
+        where: {
+          phone: {
+            in: responderPhones,
           },
-          select: {
-            id: true,
+          id: {
+            not: user.id,
           },
-        });
+        },
+        select: {
+          id: true,
+        },
+      });
 
       guardianUserIds = Array.from(
         new Set(
-          registeredGuardians.map(
-            (guardian) => guardian.id
-          )
-        )
+          registeredGuardians.map((guardian) => guardian.id),
+        ),
       );
     }
 
+    // Only currently authorized guardians may receive emergency alerts.
+    const authorizedGuardianIds =
+      await GuardianRecipientService.getAuthorizedGuardianIds(user.id);
+
+    guardianUserIds = guardianUserIds.filter((guardianId) =>
+      authorizedGuardianIds.includes(guardianId),
+    );
+
+    const locationText =
+      session.latitude !== null &&
+      session.longitude !== null
+        ? `Location: ${session.latitude.toFixed(5)}, ${session.longitude.toFixed(5)}.`
+        : "Location is currently unavailable.";
+
+    const title = "MyOgun SOS Emergency";
+
+    const message = `${
+      user.name || "A MyOgun user"
+    } may be in danger. ${locationText} Open MyOgun immediately.`;
+
+    let tokenCount = 0;
+    let successCount = 0;
+    let failureCount = 0;
+    let usersWithoutTokens = 0;
+    let attemptedGuardians = 0;
+    let skippedGuardians = 0;
+
     /*
-     * Send the emergency push.
-     *
-     * Push failure must not cause the
-     * emergency session itself to fail.
+     * Track and send notifications individually.
+     * Already claimed or sent notifications are skipped.
      */
-
-    let pushResult = {
-      userCount: guardianUserIds.length,
-      tokenCount: 0,
-      successCount: 0,
-      failureCount: 0,
-      usersWithoutTokens: 0,
-    };
-
-
-    if (guardianUserIds.length > 0) {
-      const locationText =
-        session.latitude !== null &&
-        session.longitude !== null
-          ? `Location: ${session.latitude.toFixed(
-              5
-            )}, ${session.longitude.toFixed(
-              5
-            )}.`
-          : "Location is currently unavailable.";
-
+    for (const guardianUserId of guardianUserIds) {
       try {
-        pushResult = await PushNotificationService.notifyGuardians(
-          guardianUserIds,
-          "🚨 MyOgun SOS Emergency",
-          `${
-            user.name || "A MyOgun user"
-          } may be in danger. ${locationText} Open MyOgun immediately.`
-        );
-      } catch (pushError) {
+        const notification =
+          await EmergencyNotificationService.getOrCreate({
+            userId: guardianUserId,
+            emergencyId: `guardian-session:${session.id}`,
+            title,
+            message,
+          });
+
+        const result =
+          await EmergencyNotificationService.sendToGuardian(
+            notification.id,
+            guardianUserId,
+            title,
+            message,
+          );
+
+        if (!result.attempted) {
+          skippedGuardians++;
+          continue;
+        }
+
+        attemptedGuardians++;
+
+        if ("tokenCount" in result) {
+          tokenCount += result.tokenCount ?? 0;
+          successCount += result.successCount ?? 0;
+          failureCount += result.failureCount ?? 0;
+          usersWithoutTokens += result.usersWithoutTokens ?? 0;
+        }
+      } catch (notificationError) {
         console.error(
-          "Guardian emergency push error:",
-          pushError
+          "Guardian emergency notification error:",
+          notificationError,
         );
       }
     }
 
     return NextResponse.json({
       success: true,
-
       message:
         responders.length > 0
           ? "Guardian responders assigned."
           : "No guardian responders are available.",
-
       responders,
-
       push: {
         responderCount: responders.length,
         registeredGuardians: guardianUserIds.length,
-        tokenCount: pushResult.tokenCount,
-        successCount: pushResult.successCount,
-        failureCount: pushResult.failureCount,
-        usersWithoutTokens: pushResult.usersWithoutTokens,
+        attemptedGuardians,
+        skippedGuardians,
+        tokenCount,
+        successCount,
+        failureCount,
+        usersWithoutTokens,
       },
     });
   } catch (error) {
     console.error(
       "Assign guardian responders error:",
-      error
+      error,
     );
 
-    if (
-      error instanceof GuardianSessionError
-    ) {
+    if (error instanceof GuardianSessionError) {
       return NextResponse.json(
         { error: error.message },
-        { status: error.status }
+        { status: error.status },
       );
     }
 
     return NextResponse.json(
-      {
-        error:
-          "Failed to assign guardian responders.",
-      },
-      { status: 500 }
+      { error: "Failed to assign guardian responders." },
+      { status: 500 },
     );
   }
 }

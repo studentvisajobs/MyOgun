@@ -1,4 +1,7 @@
-import { prisma } from "@/lib/prisma";
+﻿import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/app/generated/prisma/client";
+import { lockGuardianSessionUser } from "@/lib/services/GuardianSessionLock";
+import { GuardianRecipientService } from "@/lib/services/GuardianRecipientService";
 
 export class GuardianSessionError extends Error {
   status: number;
@@ -27,9 +30,7 @@ type UpdateInput = {
   message?: string;
 };
 
-function toOptionalFiniteNumber(
-  value?: number | null
-) {
+function toOptionalFiniteNumber(value?: number | null) {
   if (value === undefined || value === null) {
     return null;
   }
@@ -37,9 +38,7 @@ function toOptionalFiniteNumber(
   return Number.isFinite(value) ? value : null;
 }
 
-function normalizeBatteryLevel(
-  value?: number | null
-) {
+function normalizeBatteryLevel(value?: number | null) {
   if (value === undefined || value === null) {
     return null;
   }
@@ -48,15 +47,10 @@ function normalizeBatteryLevel(
     return null;
   }
 
-  return Math.max(
-    0,
-    Math.min(100, Math.round(value))
-  );
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function normalizeNetworkStatus(
-  value?: string | null
-) {
+function normalizeNetworkStatus(value?: string | null) {
   if (!value?.trim()) {
     return "UNKNOWN";
   }
@@ -65,9 +59,67 @@ function normalizeNetworkStatus(
 }
 
 export class GuardianSessionService {
-  static async start(input: StartInput) {
-    const existingSession =
-      await prisma.guardianSession.findFirst({
+  static async getOrCreateForSilentSOSTx(
+    tx: Prisma.TransactionClient,
+    input: StartInput,
+  ) {
+    // Caller must already hold the user-level database lock.
+    const existing = await tx.guardianSession.findFirst({
+      where: {
+        userId: input.userId,
+        status: "ACTIVE",
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    const latitude = toOptionalFiniteNumber(input.latitude);
+    const longitude = toOptionalFiniteNumber(input.longitude);
+
+    return tx.guardianSession.create({
+      data: {
+        userId: input.userId,
+        status: "ACTIVE",
+        guardianModeEnabled: false,
+        latitude,
+        longitude,
+        batteryLevel: normalizeBatteryLevel(input.batteryLevel),
+        networkStatus: normalizeNetworkStatus(input.networkStatus),
+
+        locations:
+          latitude !== null && longitude !== null
+            ? {
+                create: {
+                  latitude,
+                  longitude,
+                },
+              }
+            : undefined,
+
+        timeline: {
+          create: {
+            message: "Silent SOS Guardian Session activated.",
+            latitude,
+            longitude,
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+  }
+
+  static async start(input: StartInput, enableGuardianMode = true) {
+    return prisma.$transaction(async (tx) => {
+      await lockGuardianSessionUser(tx, input.userId);
+
+      const existingSession = await tx.guardianSession.findFirst({
         where: {
           userId: input.userId,
           status: "ACTIVE",
@@ -89,200 +141,238 @@ export class GuardianSessionService {
         },
       });
 
-    if (existingSession) {
-      return existingSession;
-    }
-
-    const latitude = toOptionalFiniteNumber(
-      input.latitude
-    );
-
-    const longitude = toOptionalFiniteNumber(
-      input.longitude
-    );
-
-    const batteryLevel = normalizeBatteryLevel(
-      input.batteryLevel
-    );
-
-    const networkStatus =
-      normalizeNetworkStatus(
-        input.networkStatus
-      );
-
-    return prisma.guardianSession.create({
-      data: {
-        userId: input.userId,
-        status: "ACTIVE",
-        latitude,
-        longitude,
-        batteryLevel,
-        networkStatus,
-
-        locations:
-          latitude !== null &&
-          longitude !== null
-            ? {
+      if (existingSession) {
+        if (enableGuardianMode && !existingSession.guardianModeEnabled) {
+          return tx.guardianSession.update({
+            where: {
+              id: existingSession.id,
+            },
+            data: {
+              guardianModeEnabled: true,
+              timeline: {
                 create: {
-                  latitude,
-                  longitude,
+                  message: "Guardian Mode activated.",
                 },
-              }
-            : undefined,
+              },
+            },
+            include: {
+              locations: {
+                take: 1,
+                orderBy: {
+                  createdAt: "desc",
+                },
+              },
+              timeline: {
+                take: 20,
+                orderBy: {
+                  createdAt: "desc",
+                },
+              },
+              responders: true,
+            },
+          });
+        }
 
-        timeline: {
-          create: {
-            message:
-              "Guardian Mode activated.",
-            latitude,
-            longitude,
+        return existingSession;
+      }
+
+      const latitude = toOptionalFiniteNumber(input.latitude);
+
+      const longitude = toOptionalFiniteNumber(input.longitude);
+
+      const batteryLevel = normalizeBatteryLevel(input.batteryLevel);
+
+      const networkStatus = normalizeNetworkStatus(input.networkStatus);
+
+      return await tx.guardianSession.create({
+        data: {
+          userId: input.userId,
+          status: "ACTIVE",
+          guardianModeEnabled: enableGuardianMode,
+          latitude,
+          longitude,
+          batteryLevel,
+          networkStatus,
+
+          locations:
+            latitude !== null && longitude !== null
+              ? {
+                  create: {
+                    latitude,
+                    longitude,
+                  },
+                }
+              : undefined,
+
+          timeline: {
+            create: {
+              message: enableGuardianMode
+                ? "Guardian Mode activated."
+                : "Silent SOS Guardian Session activated.",
+              latitude,
+              longitude,
+            },
           },
         },
-      },
-      include: {
-        locations: {
-          take: 1,
-          orderBy: {
-            createdAt: "desc",
+        include: {
+          locations: {
+            take: 1,
+            orderBy: {
+              createdAt: "desc",
+            },
           },
-        },
-        timeline: {
-          take: 20,
-          orderBy: {
-            createdAt: "desc",
+          timeline: {
+            take: 20,
+            orderBy: {
+              createdAt: "desc",
+            },
           },
+          responders: true,
         },
-        responders: true,
-      },
+      });
     });
   }
 
-  static async update(
-    sessionId: string,
-    data: UpdateInput
-  ) {
+  static async update(sessionId: string, data: UpdateInput) {
     const cleanSessionId = sessionId.trim();
 
     if (!cleanSessionId) {
-      throw new GuardianSessionError(
-        "Session ID is required.",
-        400
-      );
+      throw new GuardianSessionError("Session ID is required.", 400);
     }
 
-    const existingSession =
-      await prisma.guardianSession.findUnique({
+    const latitude = toOptionalFiniteNumber(data.latitude);
+
+    const longitude = toOptionalFiniteNumber(data.longitude);
+
+    const accuracy = toOptionalFiniteNumber(data.accuracy);
+
+    const batteryLevel = normalizeBatteryLevel(data.batteryLevel);
+
+    const networkStatus =
+      data.networkStatus === undefined || data.networkStatus === null
+        ? undefined
+        : normalizeNetworkStatus(data.networkStatus);
+
+    const message = data.message?.trim() || "Guardian location updated.";
+
+    return prisma.$transaction(async (tx) => {
+      // Find the session owner before acquiring the lock.
+      const initialSession = await tx.guardianSession.findUnique({
+        where: {
+          id: cleanSessionId,
+        },
+        select: {
+          userId: true,
+        },
+      });
+
+      if (!initialSession) {
+        throw new GuardianSessionError("Guardian session not found.", 404);
+      }
+
+      if (!initialSession.userId) {
+        throw new GuardianSessionError(
+          "Guardian session has no linked user.",
+          400,
+        );
+      }
+
+      // Use the same lock as Guardian Mode and
+      // Silent SOS start/stop operations.
+      await lockGuardianSessionUser(tx, initialSession.userId);
+
+      // Check the session again after acquiring the lock.
+      const existingSession = await tx.guardianSession.findUnique({
         where: {
           id: cleanSessionId,
         },
         select: {
           id: true,
           status: true,
+          guardianModeEnabled: true,
+          linkedEmergencies: {
+            where: {
+              silentSOS: true,
+              status: {
+                in: ["ACTIVE", "MONITORING", "RESPONDING"],
+              },
+            },
+            select: {
+              id: true,
+            },
+            take: 1,
+          },
         },
       });
 
-    if (!existingSession) {
-      throw new GuardianSessionError(
-        "Guardian session not found.",
-        404
-      );
-    }
+      if (!existingSession || existingSession.status !== "ACTIVE") {
+        throw new GuardianSessionError("Guardian session is not active.", 400);
+      }
 
-    if (
-      existingSession.status !== "ACTIVE"
-    ) {
-      throw new GuardianSessionError(
-        "Guardian session is not active.",
-        400
-      );
-    }
+      // Prevent updates after both protection
+      // modes have stopped.
+      const protectionActive =
+        existingSession.guardianModeEnabled ||
+        existingSession.linkedEmergencies.length > 0;
 
-    const latitude = toOptionalFiniteNumber(
-      data.latitude
-    );
+      if (!protectionActive) {
+        throw new GuardianSessionError(
+          "No active protection mode for this session.",
+          409,
+        );
+      }
 
-    const longitude =
-      toOptionalFiniteNumber(data.longitude);
+      return tx.guardianSession.update({
+        where: {
+          id: cleanSessionId,
+        },
+        data: {
+          latitude: latitude === null ? undefined : latitude,
 
-    const accuracy = toOptionalFiniteNumber(
-      data.accuracy
-    );
+          longitude: longitude === null ? undefined : longitude,
 
-    const batteryLevel =
-      normalizeBatteryLevel(
-        data.batteryLevel
-      );
+          batteryLevel:
+            data.batteryLevel === undefined || data.batteryLevel === null
+              ? undefined
+              : batteryLevel,
 
-    const networkStatus =
-      data.networkStatus === undefined ||
-      data.networkStatus === null
-        ? undefined
-        : normalizeNetworkStatus(
-            data.networkStatus
-          );
+          networkStatus,
 
-    const message =
-      data.message?.trim() ||
-      "Guardian location updated.";
+          locations:
+            latitude !== null && longitude !== null
+              ? {
+                  create: {
+                    latitude,
+                    longitude,
+                    accuracy,
+                  },
+                }
+              : undefined,
 
-    return prisma.guardianSession.update({
-      where: {
-        id: cleanSessionId,
-      },
-      data: {
-        latitude:
-          latitude === null
-            ? undefined
-            : latitude,
-
-        longitude:
-          longitude === null
-            ? undefined
-            : longitude,
-
-        batteryLevel:
-          data.batteryLevel === undefined ||
-          data.batteryLevel === null
-            ? undefined
-            : batteryLevel,
-
-        networkStatus,
-
-        locations:
-          latitude !== null &&
-          longitude !== null
-            ? {
-                create: {
-                  latitude,
-                  longitude,
-                  accuracy,
-                },
-              }
-            : undefined,
-
-        timeline: {
-          create: {
-            message,
-            latitude,
-            longitude,
+          timeline: {
+            create: {
+              message,
+              latitude,
+              longitude,
+            },
           },
         },
-      },
-      include: {
-        locations: {
-          take: 1,
-          orderBy: {
-            createdAt: "desc",
+        include: {
+          locations: {
+            take: 1,
+            orderBy: {
+              createdAt: "desc",
+            },
           },
-        },
-        timeline: {
-          take: 20,
-          orderBy: {
-            createdAt: "desc",
+          timeline: {
+            take: 20,
+            orderBy: {
+              createdAt: "desc",
+            },
           },
+          responders: true,
         },
-        responders: true,
-      },
+      });
     });
   }
 
@@ -290,69 +380,99 @@ export class GuardianSessionService {
     const cleanSessionId = sessionId.trim();
 
     if (!cleanSessionId) {
-      throw new GuardianSessionError(
-        "Session ID is required.",
-        400
-      );
+      throw new GuardianSessionError("Session ID is required.", 400);
     }
 
-    const existingSession =
-      await prisma.guardianSession.findUnique({
-        where: {
-          id: cleanSessionId,
-        },
+    return prisma.$transaction(async (tx) => {
+      // Identify the owner before acquiring the user lock.
+      const initialSession = await tx.guardianSession.findUnique({
+        where: { id: cleanSessionId },
+        select: { userId: true },
+      });
+
+      if (!initialSession) {
+        throw new GuardianSessionError("Guardian session not found.", 404);
+      }
+
+      if (!initialSession.userId) {
+        throw new GuardianSessionError(
+          "Guardian session has no linked user.",
+          400,
+        );
+      }
+
+      // Serialize operations belonging to this user.
+      await lockGuardianSessionUser(tx, initialSession.userId);
+
+      // Re-read the session after acquiring the lock.
+      const existingSession = await tx.guardianSession.findUnique({
+        where: { id: cleanSessionId },
         select: {
           id: true,
           status: true,
+          guardianModeEnabled: true,
+          linkedEmergencies: {
+            where: {
+              silentSOS: true,
+              status: {
+                in: ["ACTIVE", "MONITORING", "RESPONDING"],
+              },
+            },
+            select: { id: true },
+          },
         },
       });
 
-    if (!existingSession) {
-      throw new GuardianSessionError(
-        "Guardian session not found.",
-        404
-      );
-    }
+      if (!existingSession) {
+        throw new GuardianSessionError("Guardian session not found.", 404);
+      }
 
-    if (
-      existingSession.status !== "ACTIVE"
-    ) {
-      throw new GuardianSessionError(
-        "Guardian session is not active.",
-        400
-      );
-    }
+      if (existingSession.status !== "ACTIVE") {
+        throw new GuardianSessionError("Guardian session is not active.", 400);
+      }
 
-    return prisma.guardianSession.update({
-      where: {
-        id: cleanSessionId,
-      },
-      data: {
-        status: "STOPPED",
-        stoppedAt: new Date(),
+      if (!existingSession.guardianModeEnabled) {
+        throw new GuardianSessionError(
+          "Guardian Mode is not enabled for this session.",
+          409,
+        );
+      }
 
-        timeline: {
-          create: {
-            message:
-              "Guardian Mode stopped safely.",
+      const silentSOSActive = existingSession.linkedEmergencies.length > 0;
+
+      return tx.guardianSession.update({
+        where: { id: cleanSessionId },
+        data: {
+          guardianModeEnabled: false,
+
+          // Keep the shared session active for Silent SOS.
+          ...(silentSOSActive
+            ? {}
+            : {
+                status: "STOPPED" as const,
+                stoppedAt: new Date(),
+              }),
+
+          timeline: {
+            create: {
+              message: silentSOSActive
+                ? "Guardian Mode stopped. Silent SOS remains active."
+                : "Guardian Mode stopped safely.",
+            },
           },
         },
-      },
-      include: {
-        locations: {
-          take: 1,
-          orderBy: {
-            createdAt: "desc",
+        include: {
+          locations: {
+            take: 1,
+            orderBy: { createdAt: "desc" },
           },
-        },
-        timeline: {
-          take: 20,
-          orderBy: {
-            createdAt: "desc",
+          timeline: {
+            take: 20,
+            orderBy: { createdAt: "desc" },
           },
+          responders: true,
         },
-        responders: true,
-      },
+      });
     });
   }
 
@@ -382,109 +502,76 @@ export class GuardianSessionService {
     });
   }
 
-  static async assignResponders(
-    sessionId: string
-  ) {
+  static async assignResponders(sessionId: string) {
     const cleanSessionId = sessionId.trim();
 
     if (!cleanSessionId) {
-      throw new GuardianSessionError(
-        "Session ID is required.",
-        400
-      );
+      throw new GuardianSessionError("Session ID is required.", 400);
     }
 
-    const session =
-      await prisma.guardianSession.findUnique({
-        where: {
-          id: cleanSessionId,
-        },
-        include: {
-          user: {
-            include: {
-              guardianContacts: true,
-            },
+    const session = await prisma.guardianSession.findUnique({
+      where: {
+        id: cleanSessionId,
+      },
+      include: {
+        user: {
+          include: {
+            guardianContacts: true,
           },
-          responders: true,
         },
-      });
+        responders: true,
+      },
+    });
 
     if (!session) {
-      throw new GuardianSessionError(
-        "Guardian session not found.",
-        404
-      );
+      throw new GuardianSessionError("Guardian session not found.", 404);
     }
 
     if (!session.user) {
       throw new GuardianSessionError(
         "Guardian session has no linked user.",
-        400
+        400,
       );
     }
 
     if (session.status !== "ACTIVE") {
-      throw new GuardianSessionError(
-        "Guardian session is not active.",
-        400
-      );
+      throw new GuardianSessionError("Guardian session is not active.", 400);
     }
 
     const existingGuardianIds = new Set(
       session.responders
-        .map(
-          (responder) =>
-            responder.guardianContactId
-        )
-        .filter(
-          (
-            guardianContactId
-          ): guardianContactId is string =>
-            Boolean(guardianContactId)
-        )
+        .map((responder) => responder.guardianContactId)
+        .filter((guardianContactId): guardianContactId is string =>
+          Boolean(guardianContactId),
+        ),
     );
 
-    const guardiansToAssign =
-      session.user.guardianContacts.filter(
-        (guardian) =>
-          !existingGuardianIds.has(
-            guardian.id
-          )
-      );
+    const guardiansToAssign = session.user.guardianContacts.filter(
+      (guardian) => !existingGuardianIds.has(guardian.id),
+    );
 
     if (guardiansToAssign.length > 0) {
-      await prisma.emergencyResponder.createMany(
-        {
-          data: guardiansToAssign.map(
-            (guardian) => ({
-              sessionId: cleanSessionId,
-              guardianContactId:
-                guardian.id,
-              guardianName: guardian.name,
-              guardianPhone:
-                guardian.phone,
-              status: "NOTIFIED",
-            })
-          ),
-        }
-      );
+      await prisma.emergencyResponder.createMany({
+        data: guardiansToAssign.map((guardian) => ({
+          sessionId: cleanSessionId,
+          guardianContactId: guardian.id,
+          guardianName: guardian.name,
+          guardianPhone: guardian.phone,
+          status: "NOTIFIED",
+        })),
+        skipDuplicates: true,
+      });
 
-      await prisma.guardianSessionTimeline.create(
-        {
-          data: {
-            sessionId: cleanSessionId,
-            message: `${
-              guardiansToAssign.length
-            } guardian responder${
-              guardiansToAssign.length === 1
-                ? ""
-                : "s"
-            } notified.`,
-            latitude: session.latitude,
-            longitude: session.longitude,
-          },
-        }
-      );
+      await prisma.guardianSessionTimeline.create({
+        data: {
+          sessionId: cleanSessionId,
+          message: `${guardiansToAssign.length} guardian responder${
+            guardiansToAssign.length === 1 ? "" : "s"
+          } notified.`,
+          latitude: session.latitude,
+          longitude: session.longitude,
+        },
+      });
     }
 
     return prisma.emergencyResponder.findMany({
@@ -497,311 +584,444 @@ export class GuardianSessionService {
     });
   }
 
-static async respond(
-  sessionId: string,
-  userId: string
-) {
-  const cleanSessionId = sessionId.trim();
 
-  if (!cleanSessionId) {
-    throw new GuardianSessionError(
-      "Session ID is required.",
-      400
-    );
-  }
-
-  const user = await prisma.user.findUnique({
-    where: {
-      id: userId,
-    },
-    select: {
-      id: true,
-      phone: true,
-    },
-  });
-
-  if (!user) {
-    throw new GuardianSessionError(
-      "User not found.",
-      404
-    );
-  }
-
-  const session =
-    await prisma.guardianSession.findUnique({
-      where: {
-        id: cleanSessionId,
-      },
-      select: {
-        id: true,
-        status: true,
-        latitude: true,
-        longitude: true,
-      },
-    });
-
-  if (!session) {
-    throw new GuardianSessionError(
-      "Guardian session not found.",
-      404
-    );
-  }
-
-  if (session.status !== "ACTIVE") {
-    throw new GuardianSessionError(
-      "Guardian session is not active.",
-      400
-    );
-  }
-
-  const responder =
-    await prisma.emergencyResponder.findFirst({
-      where: {
-        sessionId: cleanSessionId,
-        guardianPhone: user.phone,
-      },
-    });
-
-  if (!responder) {
-    throw new GuardianSessionError(
-      "You are not assigned as a responder for this session.",
-      403
-    );
-  }
-
-  if (
-    responder.status === "RESPONDING" ||
-    responder.status === "ARRIVED" ||
-    responder.status === "COMPLETED"
-  ) {
-    return responder;
-  }
-
-  const respondingAt = new Date();
-
-  const updatedResponder =
-    await prisma.emergencyResponder.update({
-      where: {
-        id: responder.id,
-      },
-      data: {
-        status: "RESPONDING",
-        viewedAt:
-          responder.viewedAt ?? respondingAt,
-        respondingAt,
-      },
-    });
-
-  await prisma.guardianSessionTimeline.create({
-    data: {
-      sessionId: cleanSessionId,
-      message: `${updatedResponder.guardianName} is responding.`,
-      latitude: session.latitude,
-      longitude: session.longitude,
-    },
-  });
-
-  return updatedResponder;
-}
-
-  static async arrive(
+  static async getGuardianEmergency(
     sessionId: string,
-    userId: string
+    userId: string,
   ) {
     const cleanSessionId = sessionId.trim();
 
     if (!cleanSessionId) {
       throw new GuardianSessionError(
         "Session ID is required.",
-        400
+        400,
       );
     }
 
     const user = await prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
+      where: { id: userId },
       select: {
         id: true,
         phone: true,
       },
     });
 
-    if (!user) {
+    if (!user || !user.phone) {
       throw new GuardianSessionError(
-        "User not found.",
-        404
+        "Guardian account not found.",
+        403,
       );
     }
 
-    if (!user.phone) {
+    const session = await prisma.guardianSession.findUnique({
+      where: { id: cleanSessionId },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        startedAt: true,
+        latitude: true,
+        longitude: true,
+        batteryLevel: true,
+        networkStatus: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!session || !session.userId) {
       throw new GuardianSessionError(
-        "Your account does not have a phone number.",
-        400
+        "Emergency not found.",
+        404,
       );
     }
 
-    const session =
-      await prisma.guardianSession.findUnique({
-        where: {
-          id: cleanSessionId,
-        },
+    const authorizedGuardianIds =
+      await GuardianRecipientService.getAuthorizedGuardianIds(
+        session.userId,
+      );
+
+    if (!authorizedGuardianIds.includes(userId)) {
+      throw new GuardianSessionError(
+        "You are not authorised to view this emergency.",
+        403,
+      );
+    }
+
+    const responder = await prisma.emergencyResponder.findFirst({
+      where: {
+        sessionId: cleanSessionId,
+        guardianPhone: user.phone,
+      },
+      select: {
+        id: true,
+        status: true,
+        respondingAt: true,
+        arrivedAt: true,
+      },
+    });
+
+    if (!responder) {
+      throw new GuardianSessionError(
+        "You are not assigned to this emergency.",
+        403,
+      );
+    }
+
+    return {
+      session,
+      responder,
+    };
+  }
+
+
+
+
+  static async respond(sessionId: string, userId: string) {
+    const cleanSessionId = sessionId.trim();
+
+    if (!cleanSessionId) {
+      throw new GuardianSessionError("Session ID is required.", 400);
+    }
+
+    const initialSession = await prisma.guardianSession.findUnique({
+      where: { id: cleanSessionId },
+      select: { userId: true },
+    });
+
+    if (!initialSession) {
+      throw new GuardianSessionError("Guardian session not found.", 404);
+    }
+
+    if (!initialSession.userId) {
+      throw new GuardianSessionError(
+        "Guardian session has no linked user.",
+        403,
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      await lockGuardianSessionUser(tx, initialSession.userId!);
+
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true, phone: true },
+      });
+
+      if (!user) {
+        throw new GuardianSessionError("User not found.", 404);
+      }
+
+      const session = await tx.guardianSession.findUnique({
+        where: { id: cleanSessionId },
         select: {
           id: true,
+          userId: true,
           status: true,
           latitude: true,
           longitude: true,
         },
       });
 
-    if (!session) {
-      throw new GuardianSessionError(
-        "Guardian session not found.",
-        404
-      );
-    }
+      if (!session) {
+        throw new GuardianSessionError("Guardian session not found.", 404);
+      }
 
-    if (session.status !== "ACTIVE") {
-      throw new GuardianSessionError(
-        "Guardian session is not active.",
-        400
-      );
-    }
+      if (session.userId !== initialSession.userId) {
+        throw new GuardianSessionError(
+          "Guardian session ownership has changed.",
+          409,
+        );
+      }
 
-    const responder =
-      await prisma.emergencyResponder.findFirst({
+      if (session.status !== "ACTIVE") {
+        throw new GuardianSessionError(
+          "Guardian session is not active.",
+          400,
+        );
+      }
+
+      const authorizedGuardianIds =
+        await GuardianRecipientService.getAuthorizedGuardianIds(
+          session.userId!,
+          tx,
+        );
+
+      if (!authorizedGuardianIds.includes(userId)) {
+        throw new GuardianSessionError(
+          "You are no longer authorized to respond to this emergency.",
+          403,
+        );
+      }
+
+      const responder = await tx.emergencyResponder.findFirst({
         where: {
           sessionId: cleanSessionId,
           guardianPhone: user.phone,
         },
       });
 
-    if (!responder) {
-      throw new GuardianSessionError(
-        "You are not assigned as a responder for this session.",
-        403
-      );
-    }
+      if (!responder) {
+        throw new GuardianSessionError(
+          "You are not assigned as a responder for this session.",
+          403,
+        );
+      }
 
-    if (
-      responder.status === "ARRIVED" ||
-      responder.status === "COMPLETED"
-    ) {
-      return responder;
-    }
+      if (
+        responder.status === "RESPONDING" ||
+        responder.status === "ARRIVED" ||
+        responder.status === "COMPLETED"
+      ) {
+        return responder;
+      }
 
-    if (responder.status !== "RESPONDING") {
-      throw new GuardianSessionError(
-        "You must confirm that you are responding before marking yourself as arrived.",
-        400
-      );
-    }
+      const respondingAt = new Date();
 
-    const arrivedAt = new Date();
-
-    const updatedResponder =
-      await prisma.emergencyResponder.update({
-        where: {
-          id: responder.id,
+      const updatedResponder = await tx.emergencyResponder.update({
+        where: { id: responder.id },
+        data: {
+          status: "RESPONDING",
+          viewedAt: responder.viewedAt ?? respondingAt,
+          respondingAt,
         },
+      });
+
+      await tx.guardianSessionTimeline.create({
+        data: {
+          sessionId: cleanSessionId,
+          message: `${updatedResponder.guardianName} is responding.`,
+          latitude: session.latitude,
+          longitude: session.longitude,
+        },
+      });
+
+      return updatedResponder;
+    });
+  }
+
+
+
+  static async arrive(sessionId: string, userId: string) {
+    const cleanSessionId = sessionId.trim();
+
+    if (!cleanSessionId) {
+      throw new GuardianSessionError("Session ID is required.", 400);
+    }
+
+    const initialSession = await prisma.guardianSession.findUnique({
+      where: { id: cleanSessionId },
+      select: { userId: true },
+    });
+
+    if (!initialSession) {
+      throw new GuardianSessionError("Guardian session not found.", 404);
+    }
+
+    if (!initialSession.userId) {
+      throw new GuardianSessionError(
+        "Guardian session has no linked user.",
+        403,
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      await lockGuardianSessionUser(tx, initialSession.userId!);
+
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true, phone: true },
+      });
+
+      if (!user) {
+        throw new GuardianSessionError("User not found.", 404);
+      }
+
+      if (!user.phone) {
+        throw new GuardianSessionError(
+          "Your account does not have a phone number.",
+          400,
+        );
+      }
+
+      const session = await tx.guardianSession.findUnique({
+        where: { id: cleanSessionId },
+        select: {
+          id: true,
+          userId: true,
+          status: true,
+          latitude: true,
+          longitude: true,
+        },
+      });
+
+      if (!session) {
+        throw new GuardianSessionError("Guardian session not found.", 404);
+      }
+
+      if (session.userId !== initialSession.userId) {
+        throw new GuardianSessionError(
+          "Guardian session ownership has changed.",
+          409,
+        );
+      }
+
+      if (session.status !== "ACTIVE") {
+        throw new GuardianSessionError(
+          "Guardian session is not active.",
+          400,
+        );
+      }
+
+      const authorizedGuardianIds =
+        await GuardianRecipientService.getAuthorizedGuardianIds(
+          session.userId!,
+          tx,
+        );
+
+      if (!authorizedGuardianIds.includes(userId)) {
+        throw new GuardianSessionError(
+          "You are no longer authorized to respond to this emergency.",
+          403,
+        );
+      }
+
+      const responder = await tx.emergencyResponder.findFirst({
+        where: {
+          sessionId: cleanSessionId,
+          guardianPhone: user.phone,
+        },
+      });
+
+      if (!responder) {
+        throw new GuardianSessionError(
+          "You are not assigned as a responder for this session.",
+          403,
+        );
+      }
+
+      if (
+        responder.status === "ARRIVED" ||
+        responder.status === "COMPLETED"
+      ) {
+        return responder;
+      }
+
+      if (responder.status !== "RESPONDING") {
+        throw new GuardianSessionError(
+          "You must confirm that you are responding before marking yourself as arrived.",
+          400,
+        );
+      }
+
+      const arrivedAt = new Date();
+
+      const updatedResponder = await tx.emergencyResponder.update({
+        where: { id: responder.id },
         data: {
           status: "ARRIVED",
-          viewedAt:
-            responder.viewedAt ?? arrivedAt,
-          respondingAt:
-            responder.respondingAt ?? arrivedAt,
+          viewedAt: responder.viewedAt ?? arrivedAt,
+          respondingAt: responder.respondingAt ?? arrivedAt,
           arrivedAt,
         },
       });
 
-    await prisma.guardianSessionTimeline.create({
-      data: {
-        sessionId: cleanSessionId,
-        message: `${updatedResponder.guardianName} has arrived at the emergency location.`,
-        latitude: session.latitude,
-        longitude: session.longitude,
-      },
-    });
-
-    return updatedResponder;
-  }
-
-
-  static async getDashboard(
-    sessionId: string,
-    userId?: string
-  ) {
-    const cleanSessionId = sessionId.trim();
-
-    if (!cleanSessionId) {
-      throw new GuardianSessionError(
-        "Session ID is required.",
-        400
-      );
-    }
-
-    const session =
-      await prisma.guardianSession.findFirst({
-        where: {
-          id: cleanSessionId,
-          ...(userId
-            ? {
-                userId,
-              }
-            : {}),
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              phone: true,
-            },
-          },
-
-          locations: {
-            take: 1,
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
-
-          timeline: {
-            take: 100,
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
-
-          responders: {
-            orderBy: {
-              createdAt: "asc",
-            },
-          },
-
-          evidence: {
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
-
-          acknowledgements: {
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
+      await tx.guardianSessionTimeline.create({
+        data: {
+          sessionId: cleanSessionId,
+          message: `${updatedResponder.guardianName} has arrived at the emergency location.`,
+          latitude: session.latitude,
+          longitude: session.longitude,
         },
       });
 
-    if (!session) {
-      throw new GuardianSessionError(
-        "Guardian session not found.",
-        404
-      );
+      return updatedResponder;
+    });
+  }
+
+
+  static async getDashboard(sessionId: string, userId: string) {
+    const cleanSessionId = sessionId.trim();
+
+    if (!cleanSessionId) {
+      throw new GuardianSessionError("Session ID is required.", 400);
     }
 
-    const [latestLocation] =
-      session.locations;
+    const session = await prisma.guardianSession.findFirst({
+    where: {
+      id: cleanSessionId,
+      userId,
+    },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+          },
+        },
+
+        locations: {
+          take: 1,
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+
+        timeline: {
+          take: 100,
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+
+        responders: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+
+        evidence: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+
+        acknowledgements: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new GuardianSessionError("Guardian session not found.", 404);
+    }
+
+    const authorizedGuardianIds =
+      await GuardianRecipientService.getAuthorizedGuardianIds(userId);
+
+    const authorizedGuardians = await prisma.user.findMany({
+      where: {
+        id: {
+          in: authorizedGuardianIds,
+        },
+      },
+      select: {
+        phone: true,
+      },
+    });
+
+const normalizeResponderPhone = (phone: string) =>
+  phone.replace(/[^\d+]/g, "").trim();
+
+const authorizedPhones = new Set(
+  authorizedGuardians.map((guardian) =>
+    normalizeResponderPhone(guardian.phone)
+  )
+);
+
+    const [latestLocation] = session.locations;
 
     return {
       session: {
@@ -811,152 +1031,135 @@ static async respond(
         stoppedAt: session.stoppedAt,
         latitude: session.latitude,
         longitude: session.longitude,
-        batteryLevel:
-          session.batteryLevel,
-        networkStatus:
-          session.networkStatus,
+        batteryLevel: session.batteryLevel,
+        networkStatus: session.networkStatus,
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
         user: session.user,
       },
 
-      latestLocation:
-        latestLocation ?? null,
+      latestLocation: latestLocation ?? null,
 
       timeline: session.timeline,
 
-      responders: session.responders,
+      responders: session.responders.map((responder) => ({
+        ...responder,
+        isCurrentlyAuthorized: Boolean(
+          responder.guardianPhone &&
+            authorizedPhones.has(
+              normalizeResponderPhone(responder.guardianPhone)
+            )
+        ),
+      })),
 
       evidence: session.evidence,
 
-      acknowledgements:
-        session.acknowledgements,
+      acknowledgements: session.acknowledgements,
 
       summary: {
-        responderCount:
-          session.responders.length,
+        responderCount: session.responders.filter(
+          (responder) =>
+            Boolean(
+              responder.guardianPhone &&
+                authorizedPhones.has(
+                  normalizeResponderPhone(responder.guardianPhone)
+                )
+            )
+        ).length,
 
-        evidenceCount:
-          session.evidence.length,
+        evidenceCount: session.evidence.length,
 
-        acknowledgementCount:
-          session.acknowledgements.length,
+        acknowledgementCount: session.acknowledgements.length,
 
         hasLocation:
           Boolean(latestLocation) ||
-          (session.latitude !== null &&
-            session.longitude !== null),
+          (session.latitude !== null && session.longitude !== null),
 
-        isActive:
-          session.status === "ACTIVE",
+        isActive: session.status === "ACTIVE",
       },
     };
   }
 
-
-  static async getLocation(
-    sessionId: string,
-    userId: string
-  ) {
+  static async getLocation(sessionId: string, userId: string) {
     const cleanSessionId = sessionId.trim();
 
     if (!cleanSessionId) {
-      throw new GuardianSessionError(
-        "Session ID is required.",
-        400
-      );
+      throw new GuardianSessionError("Session ID is required.", 400);
     }
 
-    const session =
-      await prisma.guardianSession.findFirst({
-        where: {
-          id: cleanSessionId,
-          userId,
-        },
-        select: {
-          id: true,
-          status: true,
-          latitude: true,
-          longitude: true,
-          batteryLevel: true,
-          networkStatus: true,
-          startedAt: true,
-          stoppedAt: true,
-          updatedAt: true,
+    const session = await prisma.guardianSession.findFirst({
+      where: {
+        id: cleanSessionId,
+        userId,
+      },
+      select: {
+        id: true,
+        status: true,
+        latitude: true,
+        longitude: true,
+        batteryLevel: true,
+        networkStatus: true,
+        startedAt: true,
+        stoppedAt: true,
+        updatedAt: true,
 
-          locations: {
-            take: 1,
-            orderBy: {
-              createdAt: "desc",
-            },
-            select: {
-              id: true,
-              latitude: true,
-              longitude: true,
-              accuracy: true,
-              createdAt: true,
-            },
+        locations: {
+          take: 1,
+          orderBy: {
+            createdAt: "desc",
+          },
+          select: {
+            id: true,
+            latitude: true,
+            longitude: true,
+            accuracy: true,
+            createdAt: true,
           },
         },
-      });
+      },
+    });
 
     if (!session) {
-      throw new GuardianSessionError(
-        "Guardian session not found.",
-        404
-      );
+      throw new GuardianSessionError("Guardian session not found.", 404);
     }
 
-    const latestLocation =
-      session.locations[0] ?? null;
+    const latestLocation = session.locations[0] ?? null;
 
     return {
       sessionId: session.id,
       status: session.status,
       isActive: session.status === "ACTIVE",
 
-      latitude:
-        latestLocation?.latitude ??
-        session.latitude,
+      latitude: latestLocation?.latitude ?? session.latitude,
 
-      longitude:
-        latestLocation?.longitude ??
-        session.longitude,
+      longitude: latestLocation?.longitude ?? session.longitude,
 
-      accuracy:
-        latestLocation?.accuracy ?? null,
+      accuracy: latestLocation?.accuracy ?? null,
 
-      batteryLevel:
-        session.batteryLevel,
+      batteryLevel: session.batteryLevel,
 
-      networkStatus:
-        session.networkStatus,
+      networkStatus: session.networkStatus,
 
-      locationUpdatedAt:
-        latestLocation?.createdAt ??
-        session.updatedAt,
+      locationUpdatedAt: latestLocation?.createdAt ?? session.updatedAt,
 
       startedAt: session.startedAt,
       stoppedAt: session.stoppedAt,
     };
   }
-static async getTimeline(sessionId: string) {
-  const cleanSessionId = sessionId.trim();
+  static async getTimeline(sessionId: string) {
+    const cleanSessionId = sessionId.trim();
 
-  if (!cleanSessionId) {
-    throw new GuardianSessionError(
-      "Session ID is required.",
-      400
-    );
+    if (!cleanSessionId) {
+      throw new GuardianSessionError("Session ID is required.", 400);
+    }
+
+    return prisma.guardianSessionTimeline.findMany({
+      where: {
+        sessionId: cleanSessionId,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
   }
-
-  return prisma.guardianSessionTimeline.findMany({
-    where: {
-      sessionId: cleanSessionId,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
-}
 }

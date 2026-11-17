@@ -28,42 +28,49 @@ export class JourneyMonitor {
 
     let markedOverdue = 0;
 
-    for (const journey of expiredJourneys) {
-      const result = await prisma.$transaction(
-        async (tx) => {
-          const updated =
-            await tx.safeJourney.updateMany({
-              where: {
-                id: journey.id,
-                status: "ACTIVE",
-                estimatedArrival: {
-                  not: null,
-                  lte: now,
+        for (const journey of expiredJourneys) {
+      try {
+        const result = await prisma.$transaction(
+          async (tx) => {
+            const updated =
+              await tx.safeJourney.updateMany({
+                where: {
+                  id: journey.id,
+                  status: "ACTIVE",
+                  estimatedArrival: {
+                    not: null,
+                    lte: now,
+                  },
                 },
-              },
+                data: {
+                  status: "OVERDUE",
+                },
+              });
+
+            if (updated.count === 0) {
+              return false;
+            }
+
+            await tx.safeJourneyTimeline.create({
               data: {
-                status: "OVERDUE",
+                journeyId: journey.id,
+                message:
+                  "Estimated arrival time passed. Journey marked as overdue.",
               },
             });
 
-          if (updated.count === 0) {
-            return false;
+            return true;
           }
+        );
 
-          await tx.safeJourneyTimeline.create({
-            data: {
-              journeyId: journey.id,
-              message:
-                "Estimated arrival time passed. Journey marked as overdue.",
-            },
-          });
-
-          return true;
+        if (result) {
+          markedOverdue += 1;
         }
-      );
-
-      if (result) {
-        markedOverdue += 1;
+      } catch (error) {
+        console.error(
+          `[JourneyMonitor] Failed to process journey ${journey.id}:`,
+          error
+        );
       }
     }
 

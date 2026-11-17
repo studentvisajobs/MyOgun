@@ -86,10 +86,9 @@ export default function GuardianDashboard({
           location={dashboard.latestLocation}
         />
 
-        <RespondersPanel
-        sessionId={dashboard.session.id}
+      <RespondersPanel
         responders={dashboard.responders}
-        />
+      />
       </section>
 
       <GuardianIntelligenceCard

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { EmergencyNotificationService } from "@/lib/notifications/EmergencyNotificationService";
 
 type DeviceLocationInput = {
   latitude: number;
@@ -103,7 +104,7 @@ export class JourneyService {
         "Destination is required.",
         400
       );
-    
+
     }
 
     validateCoordinates(
@@ -278,11 +279,16 @@ export class JourneyService {
       input.networkStatus
     );
 
-    return prisma.$transaction(async (tx) => {
+    try {
+  return await prisma.$transaction(async (tx) => {
       const updatedJourney =
         await tx.safeJourney.update({
           where: {
             id: input.journeyId,
+            userId: input.userId,
+            status: {
+              in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+            },
           },
           data: {
             latitude: input.latitude,
@@ -336,7 +342,22 @@ export class JourneyService {
 
       return updatedJourney;
     });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "P2025"
+    ) {
+      throw new JourneyServiceError(
+        "Active journey not found.",
+        404
+      );
+    }
+
+    throw error;
   }
+}
 
   static async checkIn(input: JourneyActionInput) {
     const journey =
@@ -360,10 +381,15 @@ export class JourneyService {
       );
     }
 
-    return prisma.safeJourney.update({
-      where: {
-        id: journey.id,
+  try {
+  return await prisma.safeJourney.update({
+    where: {
+      id: journey.id,
+      userId: input.userId,
+      status: {
+        in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
       },
+    },
       data: {
         status: "CHECKED_IN",
         timeline: {
@@ -379,7 +405,22 @@ export class JourneyService {
           },
         },
       },
-    });
+      });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2025"
+      ) {
+        throw new JourneyServiceError(
+          "Active journey not found.",
+          404
+        );
+      }
+
+      throw error;
+    }
   }
 
   static async stop(input: JourneyActionInput) {
@@ -403,10 +444,16 @@ export class JourneyService {
         404
       );
     }
+    let completedJourney;
 
-    return prisma.safeJourney.update({
+    try {
+    completedJourney = await prisma.safeJourney.update({
       where: {
         id: journey.id,
+        userId: input.userId,
+        status: {
+          in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+        },
       },
       data: {
         status: "COMPLETED",
@@ -430,6 +477,34 @@ export class JourneyService {
       },
       },
     });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2025"
+      ) {
+        throw new JourneyServiceError(
+          "Active journey not found.",
+          404
+        );
+      }
+
+      throw error;
+    }
+    try {
+      await EmergencyNotificationService.cancelJourneyNotifications(
+        completedJourney.id
+      );
+    } catch (error) {
+      console.error(
+        "Failed to cancel Safe Journey notifications:",
+        completedJourney.id,
+        error
+      );
+    }
+
+    return completedJourney;
   }
 
   static async extend(
@@ -467,13 +542,19 @@ export class JourneyService {
       Date.now() + input.minutes * 60_000
     );
 
-    return prisma.safeJourney.update({
+    let extendedJourney;
+
+    try {
+      extendedJourney = await prisma.safeJourney.update({
       where: {
         id: journey.id,
+        userId: input.userId,
+        status: "OVERDUE",
       },
       data: {
         status: "ACTIVE",
         estimatedArrival,
+        escalatedAt: null,
         timeline: {
           create: {
             message: `Journey extended by ${input.minutes} minutes.`,
@@ -488,6 +569,35 @@ export class JourneyService {
         },
       },
     });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2025"
+      ) {
+        throw new JourneyServiceError(
+          "Overdue journey not found.",
+          404
+        );
+      }
+
+      throw error;
+    }
+
+    try {
+  await EmergencyNotificationService.cancelJourneyNotifications(
+      extendedJourney.id
+    );
+  } catch (error) {
+    console.error(
+      "Failed to cancel extended journey notifications:",
+      extendedJourney.id,
+      error
+    );
+  }
+
+  return extendedJourney;
   }
 
     static async getActive(userId: string) {
@@ -527,9 +637,15 @@ export class JourneyService {
       return journey;
     }
 
-    return prisma.safeJourney.update({
+    try {
+      return await prisma.safeJourney.update({
       where: {
         id: journey.id,
+        userId,
+        status: "ACTIVE",
+        estimatedArrival: {
+          lte: new Date(),
+        },
       },
       data: {
         status: "OVERDUE",
@@ -547,6 +663,37 @@ export class JourneyService {
           },
         },
       },
-    });
+      });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2025"
+      ) {
+        return prisma.safeJourney.findFirst({
+          where: {
+            userId,
+            status: {
+              in: ["ACTIVE", "CHECKED_IN", "OVERDUE"],
+            },
+          },
+          include: {
+            timeline: {
+              orderBy: {
+                createdAt: "desc",
+              },
+            },
+            locations: {
+              orderBy: {
+                createdAt: "asc",
+              },
+            },
+          },
+        });
+      }
+
+      throw error;
+    }
   }
 }

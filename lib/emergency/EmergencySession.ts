@@ -7,11 +7,12 @@ export type EmergencySessionResponse = {
   success: boolean;
   session: {
     id: string;
+    guardianSessionId?: string | null;
     status: string;
     latitude: number | null;
     longitude: number | null;
-    batteryLevel: number | null;
-    networkStatus: string | null;
+    battery: number | null;
+    network: string | null;
     startedAt?: string;
     updatedAt?: string;
   };

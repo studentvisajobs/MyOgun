@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import StatusBadge from "./StatusBadge";
 
 export type GuardianResponder = {
@@ -8,6 +7,7 @@ export type GuardianResponder = {
   guardianName: string;
   guardianPhone?: string | null;
   status: string;
+  isCurrentlyAuthorized?: boolean;
   viewedAt?: string | null;
   respondingAt?: string | null;
   arrivedAt?: string | null;
@@ -17,15 +17,9 @@ export type GuardianResponder = {
 };
 
 type RespondersPanelProps = {
-  sessionId: string;
   responders: GuardianResponder[];
 };
 
-type RespondResponse = {
-  success: boolean;
-  error?: string;
-  responder?: GuardianResponder;
-};
 
 function formatDateTime(value?: string | null) {
   if (!value) {
@@ -85,95 +79,8 @@ function getLatestActivity(
 }
 
 export default function RespondersPanel({
-  sessionId,
   responders,
 }: RespondersPanelProps) {
-  const [submitting, setSubmitting] =
-    useState(false);
-
-  const [successMessage, setSuccessMessage] =
-    useState<string | null>(null);
-
-  const [error, setError] =
-    useState<string | null>(null);
-
-  const handleAction = async () => {
-  if (submitting) {
-    return;
-  }
-
-  setSubmitting(true);
-  setSuccessMessage(null);
-  setError(null);
-
-  try {
-    const respondResponse = await fetch(
-      `/api/guardian/session/${sessionId}/respond`,
-      {
-        method: "POST",
-      }
-    );
-
-    const respondResult =
-      (await respondResponse.json()) as RespondResponse;
-
-    if (respondResponse.ok) {
-      setSuccessMessage(
-        "You have acknowledged this emergency and are now responding."
-      );
-
-      window.location.reload();
-      return;
-    }
-
-    const mustArrive =
-      respondResult.error?.toLowerCase().includes(
-        "responding"
-      );
-
-    if (!mustArrive) {
-      throw new Error(
-        respondResult.error ||
-          "Unable to update your response."
-      );
-    }
-
-    const arriveResponse = await fetch(
-      `/api/guardian/session/${sessionId}/arrive`,
-      {
-        method: "POST",
-      }
-    );
-
-    const arriveResult =
-      (await arriveResponse.json()) as RespondResponse;
-
-    if (
-      !arriveResponse.ok ||
-      !arriveResult.success
-    ) {
-      throw new Error(
-        arriveResult.error ||
-          "Unable to confirm your arrival."
-      );
-    }
-
-    setSuccessMessage(
-      "Your arrival has been confirmed."
-    );
-
-    window.location.reload();
-  } catch (requestError) {
-    setError(
-      requestError instanceof Error
-        ? requestError.message
-        : "Unable to update your response."
-    );
-  } finally {
-    setSubmitting(false);
-  }
-};
-
 
   return (
     <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
@@ -190,35 +97,13 @@ export default function RespondersPanel({
 
         <div className="flex items-center gap-3">
           <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm font-bold text-white">
-            {responders.length}
+            {responders.filter(
+                (responder) => responder.isCurrentlyAuthorized === true
+            ).length}
           </span>
-
-          <button
-            type="button"
-            onClick={() => {
-                void handleAction();
-                }}
-            disabled={submitting}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-black text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting
-            ? "Updating..."
-            : "Update Response"}
-          </button>
         </div>
       </div>
 
-      {successMessage ? (
-        <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-300">
-          ✓ {successMessage}
-        </div>
-      ) : null}
-
-      {error ? (
-        <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm font-semibold text-red-300">
-          {error}
-        </div>
-      ) : null}
 
       <div className="mt-5 space-y-3">
         {responders.length > 0 ? (
@@ -258,14 +143,21 @@ export default function RespondersPanel({
                     ) : null}
                   </div>
 
-                  <StatusBadge
-                    status={responder.status}
-                  />
+                <div className="flex flex-col items-start gap-2">
+                  {responder.isCurrentlyAuthorized === false ? (
+                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
+                      Former guardian — Historical record
+                    </span>
+                  ) : null}
+
+                  <StatusBadge status={responder.status} />
+                </div>
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {responder.guardianPhone ? (
-                    <>
+                    {responder.isCurrentlyAuthorized === true &&
+                    responder.guardianPhone ? (
+                      <>
                       <a
                         href={`tel:${responder.guardianPhone}`}
                         className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white transition hover:bg-white/10"
